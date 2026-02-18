@@ -7,7 +7,7 @@ import {
   MidenWalletAdapter,
   PrivateDataPermission,
   AllowedPrivateData,
-} from "@demox-labs/miden-wallet-adapter";
+} from "@miden-sdk/miden-wallet-adapter";
 
 interface WalletProvidersProps {
   children: React.ReactNode;

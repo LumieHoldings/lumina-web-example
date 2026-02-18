@@ -1,11 +1,11 @@
-import type { RpcClient, Endpoint, NoteId } from "@demox-labs/miden-sdk";
+import type { RpcClient, Endpoint, NoteId } from "@miden-sdk/miden-sdk";
 type FetchedNote = Awaited<ReturnType<RpcClient["getNotesById"]>>[number];
 
 let rpcClient: RpcClient | null = null;
 
 export async function getRpcClient(): Promise<RpcClient> {
   if (!rpcClient) {
-    const { RpcClient, Endpoint } = await import("@demox-labs/miden-sdk");
+    const { RpcClient, Endpoint } = await import("@miden-sdk/miden-sdk");
     const endpoint = Endpoint.testnet();
     rpcClient = new RpcClient(endpoint);
   }
@@ -16,7 +16,7 @@ export async function getRpcNote(
   noteIdAsHex: string,
 ): Promise<FetchedNote | null> {
   const rpcClient = await getRpcClient();
-  const { NoteId } = await import("@demox-labs/miden-sdk");
+  const { NoteId } = await import("@miden-sdk/miden-sdk");
   const noteId = NoteId.fromHex(noteIdAsHex);
   try {
     const rpcNotes = await rpcClient.getNotesById([noteId]);

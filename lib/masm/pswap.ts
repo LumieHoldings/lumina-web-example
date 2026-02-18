@@ -1,55 +1,51 @@
 /**
- * PSWAP Note Script - Partial Swap with Expiration (CLOB Format)
+ * PSWAP note script used by the current web tests.
  *
- * This script implements a partial swap note that:
- * 1. Can be partially filled - consumer specifies fill amount via note args
- * 2. Supports reclaim - creator can reclaim assets at any time
- * 3. Supports expiration - returns assets to creator after expiration block
- * 4. Creates P2ID payback notes for the requested asset amount
+ * Current behavior:
+ * 1. Expects 14 note inputs.
+ * 2. Uses hardcoded `PUBLIC_NOTE` for output note creation.
+ * 3. Supports full fills and partial fills (with leftover PSWAP note).
  *
  * Inputs (14 felts):
  *   0-3:   REQUESTED_ASSET_WORD [amount, 0, suffix, prefix] (FungibleAsset format)
  *   4:     SWAPP_TAG - NoteTag for the SWAPP note (for discoverability)
  *   5:     P2ID_TAG - NoteTag for P2ID payback notes to creator
- *   6-7:   EMPTY (reserved)
- *   8:     SWAP_COUNT - Number of times this note has been partially filled
- *   9:     EXPIRATION_BLOCK - Block height after which note expires (0 = no expiration)
- *   10-11: EMPTY (reserved)
- *   12:    CREATOR_PREFIX - Creator account ID prefix
- *   13:    CREATOR_SUFFIX - Creator account ID suffix
+ *   6-7:   PARENT_SERIAL_0..1 (or zero for root PSWAP)
+ *   8:     SWAP_COUNT
+ *   9:     EXPIRATION_BLOCK (0 = no expiration)
+ *   10-11: PARENT_SERIAL_2..3 (or zero for root PSWAP)
+ *   12:    CREATOR_PREFIX
+ *   13:    CREATOR_SUFFIX
  *
- * Note Args:
- *   [0, 0, 0, fill_amount] - Amount of requested tokens taker wants to fill
+ * Note args:
+ *   [0, 0, 0, fill_amount]
  *
  * Outputs:
- *   - If expired: Assets returned to creator via receive_asset
- *   - If creator reclaims: Assets returned to creator via receive_asset
- *   - Partial fill: P2ID note to creator (fill_amount) + leftover PSWAP note
- *   - Full fill: P2ID note to creator (full requested_amount), no leftover
+ *   - Reclaim path: assets returned to creator
+ *   - Partial fill: P2ID note to creator + leftover PSWAP note
+ *   - Full fill: P2ID note only (no leftover)
  *
- * Key Formula:
- *   taker_receives = (fill_amount * offered_amount) / requested_amount
- *   leftover_offered = offered_amount - taker_receives
- *   leftover_requested = requested_amount - fill_amount
+ * Note: The constant name `PSWAP_PRIVATE_MASM` is legacy; this script currently
+ * emits PUBLIC output notes via `push.PUBLIC_NOTE`.
  */
-export const PSWAP_MASM = `
-use.miden::active_note
-use.miden::output_note
-use.miden::note
-use.miden::contracts::wallets::basic->wallet
-use.std::sys
-use.miden::active_account
-use.std::math::u64
-use.miden::tx
-use.std::crypto::hashes::rpo
+export const PSWAP_PRIVATE_MASM = `
+use miden::protocol::active_note
+use miden::protocol::output_note
+use miden::protocol::note
+use miden::standards::wallets::basic->wallet
+use miden::core::sys
+use miden::protocol::active_account
+use miden::core::math::u64
+use miden::protocol::tx
+use miden::core::crypto::hashes::rpo256
 
 # CONSTANTS
 # =================================================================================================
 
-const.PUBLIC_NOTE=1
-const.EXECUTION_HINT_ALWAYS=1
-const.FACTOR=0x000186A0 # 1e5
-const.MAX_U32=0x0000000100000000
+const PUBLIC_NOTE = 1
+const EXECUTION_HINT_ALWAYS = 1
+const FACTOR = 0x000186A0 # 1e5
+const MAX_U32 = 0x0000000100000000
 
 # Memory Addresses
 # =================================================================================================
@@ -63,99 +59,70 @@ const.MAX_U32=0x0000000100000000
 # - Full Word Addresses: Addresses 80 to 120, must be divisible by 4 (0x50 to 0x64)
 
 # PSWAP Note Inputs (0 to 40)
-const.REQUESTED_ASSET_WORD_INPUT = 0x0000
-const.REQUESTED_ASSET_INPUT_1 = 0x0001
-const.REQUESTED_ASSET_INPUT_2 = 0x0002
-const.REQUESTED_ASSET_INPUT_3 = 0x0003
-const.SWAPP_TAG_INPUT = 0x0004
-const.P2ID_TAG_INPUT = 0x0005
-const.EMPTY_INPUT_6 = 0x0006
-const.EMPTY_INPUT_7 = 0x0007
-const.SWAPP_COUNT_INPUT = 0x0008
-const.EXPIRATION_BLOCK_INPUT = 0x0009
-const.EMPTY_INPUT_10 = 0x000A
-const.EMPTY_INPUT_11 = 0x000B
-const.SWAPP_CREATOR_PREFIX_INPUT = 0x000C
-const.SWAPP_CREATOR_SUFFIX_INPUT = 0x000D
+const REQUESTED_ASSET_WORD_INPUT = 0x0000
+const REQUESTED_ASSET_INPUT_1 = 0x0001
+const REQUESTED_ASSET_INPUT_2 = 0x0002
+const REQUESTED_ASSET_INPUT_3 = 0x0003
+const SWAPP_TAG_INPUT = 0x0004
+const P2ID_TAG_INPUT = 0x0005
+# Parent serial number for audit trail (slots 6-7 and 10-11)
+# These store the serial number of the parent note (or zeros for root PSWAP)
+const PARENT_SERIAL_0 = 0x0006  # serial[0] - bottom of original word
+const PARENT_SERIAL_1 = 0x0007  # serial[1]
+const SWAPP_COUNT_INPUT = 0x0008
+const EXPIRATION_BLOCK_INPUT = 0x0009  # Block number after which only creator can reclaim (0 = no expiration)
+const PARENT_SERIAL_2 = 0x000A  # serial[2]
+const PARENT_SERIAL_3 = 0x000B  # serial[3] - top of original word
+const SWAPP_CREATOR_PREFIX_INPUT = 0x000C
+const SWAPP_CREATOR_SUFFIX_INPUT = 0x000D
 
 # RESERVED INPUT MEMORY ADDRESSES 0 to 40
 
 # Memory Addresses for Price Calculation Procedure (41 to 60)
-const.AMT_TOKENS_A = 0x0028
-const.AMT_TOKENS_B = 0x0029
-const.AMT_TOKENS_B_IN = 0x002A
-const.AMT_TOKENS_A_OUT= 0x002B
-const.RATIO = 0x002C
+const AMT_TOKENS_A = 0x0028
+const AMT_TOKENS_B = 0x0029
+const AMT_TOKENS_B_IN = 0x002A
+const AMT_TOKENS_A_OUT = 0x002B
+const RATIO = 0x002C
 
 # TokenId Memory Addresses (60 to 70)
-const.TOKEN_A_ID_PREFIX = 0x002D
-const.TOKEN_A_ID_SUFFIX = 0x002E
-const.TOKEN_B_ID_PREFIX = 0x002F
-const.TOKEN_B_ID_SUFFIX = 0x0030
+const TOKEN_A_ID_PREFIX = 0x002D
+const TOKEN_A_ID_SUFFIX = 0x002E
+const TOKEN_B_ID_PREFIX = 0x002F
+const TOKEN_B_ID_SUFFIX = 0x0030
 
 # Boolean Memory Addresses (70 to 80)
-const.IS_PARTIAL_FILL = 0x0035
+const IS_PARTIAL_FILL = 0x0035
 
 # Full Word Memory Addresses (80 to 120, must be divisible by 4)
-const.SWAPP_SCRIPT_HASH_WORD = 0x0050
-const.P2ID_SCRIPT_ROOT_WORD = 0x0054
-const.SWAP_SERIAL_NUM_WORD = 0x0058
-const.P2ID_SERIAL_NUM_WORD = 0x005C
-const.P2ID_OUTPUT_RECIPIENT_WORD = 0x0060
-const.OFFERED_ASSET_WORD = 0x0064
+const SWAPP_SCRIPT_HASH_WORD = 0x0050
+const P2ID_SCRIPT_ROOT_WORD = 0x0054
+const SWAP_SERIAL_NUM_WORD = 0x0058
+const P2ID_SERIAL_NUM_WORD = 0x005C
+const P2ID_OUTPUT_RECIPIENT_WORD = 0x0060
+const OFFERED_ASSET_WORD = 0x0064
 
 # Temporary Memory Addresses
-const.NEW_ASSET_A = 0x0078
+
+const NEW_ASSET_A = 0x0078
 
 # ERRORS
 # =================================================================================================
 
-# SWAP script expects exactly 14 note inputs
-const.ERR_SWAP_WRONG_NUMBER_OF_INPUTS="PSWAP wrong number of inputs"
+# SWAP script expects exactly 9 note inputs
+const ERR_SWAP_WRONG_NUMBER_OF_INPUTS = "PSWAP wrong number of inputs"
 
 # SWAP script requires exactly one note asset
-const.ERR_SWAP_WRONG_NUMBER_OF_ASSETS="PSWAP wrong number of assets"
+const ERR_SWAP_WRONG_NUMBER_OF_ASSETS = "PSWAP wrong number of assets"
 
 # SWAP amount must not exceed 184467440694145
-const.ERR_INVALID_SWAP_AMOUNT="PSWAP invalid SWAP amount"
+const ERR_INVALID_SWAP_AMOUNT = "PSWAP invalid SWAP amount"
 
 # SWAPp amount must not be 0
-const.ERR_INVALID_SWAP_AMOUNT_ZERO="PSWAP zero SWAP amount"
+const ERR_INVALID_SWAP_AMOUNT_ZERO = "PSWAP zero SWAP amount"
 
-# Note has expired
-const.ERR_PSWAP_EXPIRED="PSWAP note has expired"
-
-# EXPIRATION CHECK
-# =================================================================================================
-
-#! Returns true if the note has expired (current block >= expiration block)
-#! Returns false if expiration block is 0 (no expiration)
-#!
-#! Inputs: []
-#! Outputs: [is_expired]
-#!
-proc.is_expired
-    push.0 exec.active_note::get_inputs drop drop
-    # => []
-
-    mem_load.EXPIRATION_BLOCK_INPUT
-    # => [expiration_block]
-
-    dup eq.0
-    # => [is_zero, expiration_block]
-
-    if.true
-        # No expiration set (0 = never expires)
-        drop push.0
-        # => [0]
-    else
-        # Check if current block >= expiration block
-        exec.tx::get_block_number
-        # => [current_block, expiration_block]
-        gte
-        # => [is_expired]
-    end
-end
+# SWAP note has expired - only creator can reclaim
+const ERR_SWAP_EXPIRED = "PSWAP note expired - only creator can reclaim"
 
 # PRICE CALCULATION
 # =================================================================================================
@@ -165,7 +132,7 @@ end
 #! Inputs: [tokens_a, tokens_b, tokens_b_in]
 #! Outputs: [tokens_a_out]
 #!
-proc.calculate_tokens_a_for_b
+proc calculate_tokens_a_for_b
     mem_store.AMT_TOKENS_A
     mem_store.AMT_TOKENS_B
     mem_store.AMT_TOKENS_B_IN
@@ -240,27 +207,21 @@ end
 #! Inputs: [SERIAL_NUM, SCRIPT_HASH]
 #! Outputs: [P2ID_RECIPIENT]
 #!
-proc.build_p2id_recipient_hash
-    padw hmerge
-    # => [SERIAL_NUM_HASH, SCRIPT_HASH]
+proc build_p2id_recipient_hash
+    # Input: [SERIAL_NUM, SCRIPT_HASH]
+    # Output: [P2ID_RECIPIENT]
 
-    swapw hmerge
-    # => [SERIAL_SCRIPT_HASH]
-
-    padw
-    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_load.SWAPP_CREATOR_PREFIX_INPUT
+    # Store P2ID note inputs (creator suffix, prefix) packed into a word at address 4000
+    # Same layout as get_inputs: input[0]=suffix at elem[0], input[1]=prefix at elem[1]
+    mem_load.SWAPP_CREATOR_SUFFIX_INPUT
+    mem_load.SWAPP_CREATOR_PREFIX_INPUT
     push.0.0
-
     push.4000 mem_storew_be dropw
-    push.4004 mem_storew_be dropw
+    # => [SERIAL_NUM, SCRIPT_HASH]
 
-    push.8.4000
-    # => [ptr, elements]
-
-    exec.rpo::hash_memory
-    # => [INPUTS_HASH, SERIAL_SCRIPT_HASH]
-
-    hmerge
+    # build_recipient: [inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT] => [RECIPIENT]
+    push.2 push.4000
+    exec.note::build_recipient
     # => [P2ID_RECIPIENT]
 end
 
@@ -269,7 +230,7 @@ end
 #! Inputs: [SERIAL_NUM, SCRIPT_HASH, INPUT_HASH]
 #! Outputs: [P2ID_RECIPIENT]
 #!
-proc.build_recipient_hash
+proc build_recipient_hash
     padw hmerge
     # => [SERIAL_NUM_HASH, SCRIPT_HASH, INPUT_HASH]
 
@@ -288,7 +249,7 @@ end
 #! Inputs: []
 #! Outputs: []
 #!
-proc.increment_swap_count
+proc increment_swap_count
     mem_load.SWAPP_COUNT_INPUT
     push.1
     add
@@ -297,14 +258,14 @@ end
 
 # input: [SERIAL_NUM, swap_count, ...]
 # ouput: [P2ID_SERIAL_NUM, ...]
-proc.get_p2id_serial_num
+proc get_p2id_serial_num
     swapw
     hmerge
 end
 
 # input: []
 # output: [get_serial_number + 1]
-proc.get_new_swap_serial_num
+proc get_new_swap_serial_num
     exec.active_note::get_serial_number
     push.1
     add
@@ -315,7 +276,7 @@ end
 #! Inputs: []
 #! Outputs: [is_creator]
 #!
-proc.is_consumer_is_creator
+proc is_consumer_is_creator
     push.0 exec.active_note::get_inputs drop drop
     # => []
 
@@ -341,12 +302,61 @@ proc.is_consumer_is_creator
     # => [is_creator]
 end
 
-#! Sends Assets in Note to Consuming Account (used for reclaim/expiry)
+#! Checks if the PSWAP note has expired
+#!
+#! A note is expired if:
+#!   - expiration_block > 0 AND
+#!   - current_block >= expiration_block
+#!
+#! Inputs: []
+#! Outputs: [is_expired] (1 if expired, 0 if not)
+#!
+proc is_note_expired
+    # Load inputs to memory first
+    push.0 exec.active_note::get_inputs drop drop
+    # => []
+
+    mem_load.EXPIRATION_BLOCK_INPUT
+    # => [expiration_block]
+
+    # If expiration_block == 0, no expiration
+    dup push.0 eq
+    # => [is_zero, expiration_block]
+
+    if.true
+        # No expiration set
+        drop push.0
+        # => [0] (not expired)
+    else
+        # Check if current block >= expiration_block (i.e., is expired)
+        exec.tx::get_block_number
+        # => [current_block, expiration_block]
+        #
+        # gte pops [b, a] and returns (a >= b)
+        # With [current_block, expiration_block]:
+        #   b = current_block (top), a = expiration_block (below)
+        #   Returns: expiration_block >= current_block - WRONG!
+        #
+        # We need: current_block >= expiration_block
+        # So swap first to get [expiration_block, current_block]
+        # Then gte: a = current_block, b = expiration_block
+        # Returns: current_block >= expiration_block - CORRECT!
+
+        swap
+        # => [expiration_block, current_block]
+
+        gte
+        # => [current_block >= expiration_block] = [is_expired]
+    end
+    # => [is_expired]
+end
+
+#! Sends Assets in Note to Consuming Account
 #!
 #! Inputs: []
 #! Outputs: []
 #!
-proc.handle_reclaim
+proc handle_reclaim
     push.0 exec.active_note::get_assets
 
     mem_loadw_be.0
@@ -356,33 +366,33 @@ proc.handle_reclaim
     dropw
 end
 
-# Partially Fillable Swap Script (SWAPp)
+# Partially Fillable Swap Script (PSWAP)
 # =================================================================================================
 #
-# Partially Fillable Swap Script (SWAPp): adds an asset from the note into consumers account and
+# Partially Fillable Swap Script (PSWAP): adds an asset from the note into consumers account and
 # creates a note consumable by note issuer containing requested ASSET.
 #
 # If the consuming account does not have sufficient liquidity to completely
-# fill the amount of the SWAPp creator's requested asset, then the SWAPp note:
+# fill the amount of the PSWAP creator's requested asset, then the PSWAP note:
 #  1) Computes the ratio of token_a to token_b, where token_a is the offered asset,
 #     and where token_b is the requested asset
 #  2) Calculates the amount of token_a to send to the consumer based on the the
 #     amount of token_b sent via P2ID to the creator
-#  3) Outputs a new SWAPp note with the remaining liquidity of token_a, and the updated
+#  3) Outputs a new PSWAP note with the remaining liquidity of token_a, and the updated
 #     amount of token_b
 #
-# If the consuming account completely fills the amount requested by the SWAPp creator,
+# If the consuming account completely fills the amount requested by the PSWAP creator,
 # only a single P2ID note is outputted.
 #
 # Definitions:
 # 1) the offered asset is referred to as token_a,
 # 2) the requested asset is referred to as token_b,
-# 3) token_b_in is the amount of token_b sent to the SWAPp creator via P2ID from the consuming account
+# 3) token_b_in is the amount of token_b sent to the PSWAP creator via P2ID from the consuming account
 # 4) token_a_out is the amount of token_a sent to the consuming account
 #
 
 # => []
-proc.execute_SWAPp
+proc execute_SWAPp
     push.OFFERED_ASSET_WORD exec.active_note::get_assets assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS drop
     # => []
 
@@ -406,7 +416,7 @@ proc.execute_SWAPp
     push.0 exec.active_note::get_inputs
     # => [num_inputs, inputs_ptr]
 
-    # make sure the number of inputs is 14
+    # make sure the number of inputs is N
     eq.14 assert.err=ERR_SWAP_WRONG_NUMBER_OF_INPUTS
     # => [inputs_ptr]
 
@@ -485,7 +495,7 @@ proc.execute_SWAPp
 
     # 1) send token_b_in amt in to creator
     # 2) send token_a_out amt to consumer
-
+    #
     # If Partial Fill:
     # 3) create SWAPp' and calculate token_a' & token_b'
     # 4) add token_a' and token_b' to SWAPp'
@@ -496,11 +506,14 @@ proc.execute_SWAPp
     exec.increment_swap_count
     # => [P2ID_SCRIPT_HASH]
 
-    padw mem_loadw_be.SWAPP_COUNT_INPUT
-    # => [SWAP_COUNT, P2ID_SCRIPT_HASH]
+    # Build SWAP_COUNT word from single felt (don't use mem_loadw_be which would
+    # pick up parent serial data from slots 10-11)
+    mem_load.SWAPP_COUNT_INPUT push.0.0.0
+    # => [0, 0, 0, swap_count] = [SWAP_COUNT_WORD] with swap_count at Word[0]
+    # => [SWAP_COUNT_WORD, P2ID_SCRIPT_HASH]
 
     exec.active_note::get_serial_number
-    # => [SWAP_SERIAL_NUM, SWAP_COUNT, P2ID_SCRIPT_HASH]
+    # => [SWAP_SERIAL_NUM, SWAP_COUNT_WORD, P2ID_SCRIPT_HASH]
 
     exec.get_p2id_serial_num
     # => [P2ID_SERIAL_NUM, P2ID_SCRIPT_HASH]
@@ -508,19 +521,13 @@ proc.execute_SWAPp
     exec.build_p2id_recipient_hash
     # => [P2ID_RECIPIENT]
 
-    push.EXECUTION_HINT_ALWAYS
-    # => [execution_hint_always, P2ID_RECIPIENT]
-
     push.PUBLIC_NOTE
-    # => [public_note, execution_hint_always, P2ID_RECIPIENT]
-
-    push.0 # @dev aux for p2id output note
-    # => [aux, public_note, execution_hint_always, P2ID_RECIPIENT]
+    # => [note_type, P2ID_RECIPIENT]
 
     mem_load.P2ID_TAG_INPUT
-    # => [tag, aux, public_note, execution_hint_always, P2ID_RECIPIENT]
-    # => [tag, aux, note_type, execution_hint, RECIPIENT]
+    # => [tag, note_type, P2ID_RECIPIENT]
 
+    # v0.13 API: [tag, note_type, RECIPIENT] => [note_idx]
     call.output_note::create
     # => [note_idx, pad(15) ...]
 
@@ -562,11 +569,21 @@ proc.execute_SWAPp
         mem_storew_be.REQUESTED_ASSET_WORD_INPUT dropw
         # => []
 
-        push.16.0
-        # => [inputs, ptr]
+        # Store current serial as parent serial for audit trail in leftover note
+        # get_serial_number returns [serial[3], serial[2], serial[1], serial[0]] with serial[3] on TOP
+        exec.active_note::get_serial_number
+        # => [serial[3], serial[2], serial[1], serial[0]]
+        mem_store.PARENT_SERIAL_3  # slot 11 <- serial[3]
+        mem_store.PARENT_SERIAL_2  # slot 10 <- serial[2]
+        mem_store.PARENT_SERIAL_1  # slot 7  <- serial[1]
+        mem_store.PARENT_SERIAL_0  # slot 6  <- serial[0]
+        # => []
 
-        exec.rpo::hash_memory
-        # => [INPUTS_HASH]
+        push.14.0
+        # => [num_inputs, ptr]
+
+        exec.note::compute_inputs_commitment
+        # => [INPUTS_COMMITMENT]
 
         exec.active_note::get_script_root
         # => [SCRIPT_HASH, INPUTS_HASH]
@@ -577,34 +594,27 @@ proc.execute_SWAPp
         exec.note::build_recipient_hash
         # => [RECIPIENT_SWAPP]
 
-        push.EXECUTION_HINT_ALWAYS
-        # => [execution_hint_always, SWAPp_RECIPIENT]
-
         push.PUBLIC_NOTE
-        # => [public_note, execution_hint_always, SWAPp_RECIPIENT]
-
-        push.0 # @dev empty aux
-        # => [aux, public_note, execution_hint_always, SWAPp_RECIPIENT]
+        # => [note_type, SWAPp_RECIPIENT]
 
         mem_load.SWAPP_TAG_INPUT
-        # => [aux, public_note, execution_hint_always, SWAPp_RECIPIENT]
+        # => [tag, note_type, SWAPp_RECIPIENT]
 
         mem_load.AMT_TOKENS_A mem_load.AMT_TOKENS_A_OUT sub
-        # => [token_a_amt', aux, public_note, execution_hint_always, SWAPp_RECIPIENT]
+        # => [token_a_amt', tag, note_type, SWAPp_RECIPIENT]
 
         push.0
         mem_load.TOKEN_A_ID_SUFFIX
         mem_load.TOKEN_A_ID_PREFIX
-        # => [ASSET, payback_tag, aux, note_type, SWAPp_RECIPIENT]
+        # => [ASSET, tag, note_type, SWAPp_RECIPIENT]
 
         dupw call.wallet::receive_asset
-        # => [ASSET, payback_tag, aux, note_type, SWAPp_RECIPIENT]
+        # => [ASSET, tag, note_type, SWAPp_RECIPIENT]
 
         mem_storew_be.NEW_ASSET_A dropw
-        # => [payback_tag, aux, note_type, SWAPp_RECIPIENT]
-        # => [tag, aux, note_type, execution_hint, RECIPIENT]
+        # => [tag, note_type, RECIPIENT]
 
-        # SWAPp' creation
+        # SWAPp' creation - v0.13 API: [tag, note_type, RECIPIENT] => [note_idx]
         call.output_note::create
         # => [note_idx, pad(15) ...]
 
@@ -637,32 +647,26 @@ begin
     mem_store.AMT_TOKENS_B_IN drop drop drop
     # => []
 
-    # Store P2ID script root (hardcoded from miden-lib)
-    push.15783632360113277539.7403765918285273520.15691985194755641846.10399643920503194563
+    push.3558201871398422326.444910447169617901.15090726097241769395.13362761878458161062
     mem_storew_be.P2ID_SCRIPT_ROOT_WORD dropw
     # => []
 
-    # Check if note has expired first
-    exec.is_expired
-    # => [is_expired]
+    exec.is_consumer_is_creator
+    # => [is_creator]
 
     if.true
-        # Note has expired - only creator can reclaim expired notes
-        exec.is_consumer_is_creator
-        # => [is_creator]
-        assert.err=ERR_PSWAP_EXPIRED
-        # Creator verified - return assets
+        # Creator can always reclaim (regardless of expiration)
         exec.handle_reclaim
     else
-        # Note not expired - check if creator is reclaiming or taker is filling
-        exec.is_consumer_is_creator
-        # => [is_creator]
+        # Non-creator: check if note has expired
+        exec.is_note_expired
+        # => [is_expired]
 
         if.true
-            # Creator is reclaiming early
-            exec.handle_reclaim
+            # Note is expired - only creator can reclaim, fail transaction
+            push.0 assert.err=ERR_SWAP_EXPIRED
         else
-            # Taker is filling the swap
+            # Note is not expired - allow fill
             exec.execute_SWAPp
         end
     end
@@ -680,3 +684,14 @@ export const P2ID_SCRIPT_ROOT = [
   BigInt("15691985194755641846"),
   BigInt("10399643920503194563"),
 ];
+
+/**
+ * Note type values for the NOTE_TYPE_OUTPUT input
+ * These match Miden's internal NoteType enum:
+ * - Public = 1 (stored on-chain)
+ * - Private = 2 (off-chain, only hash on-chain)
+ */
+export const NOTE_TYPE = {
+  PUBLIC: BigInt(1),
+  PRIVATE: BigInt(2),
+} as const;

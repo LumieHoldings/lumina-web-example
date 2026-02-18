@@ -3,20 +3,18 @@
 /**
  * PSWAP Private Partial Fill Test Page
  *
- * This test verifies that private PSWAP notes work correctly:
- *   1. Maker creates PRIVATE PSWAP: 1000 GOLD for 1000 SILVER
- *   2. Taker fills 25%: sends 250 SILVER, receives 250 GOLD
- *   3. Output notes (P2ID + leftover) should also be PRIVATE
- *   4. Maker consumes P2ID: receives 250 SILVER
+ * This test runs two PSWAP flows back-to-back:
+ *   1. Flow 1: full fill (1000 SILVER)
+ *   2. Flow 2: partial fill (250 SILVER)
+ *   3. Mints/consumes top-up notes between flows
  *
  * Key difference from /partial:
  *   - Uses PSWAP_PRIVATE_MASM with 15 inputs (includes NOTE_TYPE_OUTPUT)
- *   - Creates notes with NoteType.Private
- *   - Uses forLocalUseCase tags instead of forPublicUseCase
+ *   - Controls output note type via input[14]
  */
 
 import { useState, useCallback } from "react";
-import { AccountId } from "@demox-labs/miden-sdk";
+import { AccountId } from "@miden-sdk/miden-sdk";
 
 const OFFERED_AMOUNT = BigInt(1000);
 const REQUESTED_AMOUNT = BigInt(1000);
@@ -42,7 +40,7 @@ interface TestState {
   silverFaucetId: string | null;
   makerId: string | null;
   takerId: string | null;
-  swappNoteId: string | null;
+  pswapNoteId: string | null;
   p2idNoteId: string | null;
   leftoverNoteId: string | null;
 }
@@ -55,7 +53,7 @@ export default function PrivatePartialFillTestPage() {
     silverFaucetId: null,
     makerId: null,
     takerId: null,
-    swappNoteId: null,
+    pswapNoteId: null,
     p2idNoteId: null,
     leftoverNoteId: null,
   });
@@ -99,7 +97,7 @@ export default function PrivatePartialFillTestPage() {
   );
 
   /**
-   * Run the complete PRIVATE PSWAP test flow
+   * Run full-fill then partial-fill flows against PSWAP.
    */
   const runTest = useCallback(async () => {
     setState({
@@ -109,21 +107,22 @@ export default function PrivatePartialFillTestPage() {
       silverFaucetId: null,
       makerId: null,
       takerId: null,
-      swappNoteId: null,
+      pswapNoteId: null,
       p2idNoteId: null,
       leftoverNoteId: null,
     });
 
     try {
       log("============================================================");
-      log("PRIVATE PSWAP PARTIAL FILL - TEST");
+      log("PSWAP FLOW TEST (FULL + PARTIAL)");
       log("============================================================");
       log("");
-      log("This test verifies PRIVATE note output from partial swaps:");
-      log("  1. Maker creates PRIVATE PSWAP: 1000 GOLD for 1000 SILVER");
-      log("  2. Taker fills 25%: sends 250 SILVER, receives 250 GOLD");
-      log("  3. P2ID note to maker should be PRIVATE");
-      log("  4. Leftover SWAPP note should be PRIVATE");
+      log("This run executes two public-mode flows with the same script:");
+      log("  1. Flow 1: maker creates SWAPP, taker FULL fills 1000 SILVER");
+      log(
+        "  2. Flow 2: maker creates new SWAPP, taker PARTIAL fills 250 SILVER",
+      );
+      log("  3. Tokens are topped up between flows via faucet mints");
       log("");
       log("Key: Uses PSWAP_PRIVATE_MASM with NOTE_TYPE_OUTPUT input");
 
@@ -140,13 +139,11 @@ export default function PrivatePartialFillTestPage() {
         NoteMetadata,
         NoteRecipient,
         NoteTag,
-        NoteExecutionHint,
-        NoteExecutionMode,
         NoteInputs,
         OutputNote,
         TransactionRequestBuilder,
         MidenArrays,
-      } = await import("@demox-labs/miden-sdk");
+      } = await import("@miden-sdk/miden-sdk");
 
       // =========================================================================
       // PHASE 1: Initialize Client
@@ -162,14 +159,23 @@ export default function PrivatePartialFillTestPage() {
         "https://rpc.testnet.miden.io:443";
       log(`RPC URL: ${rpcUrl}`);
 
-      const client = await WebClient.createClient(rpcUrl);
+      // Use an isolated store per run to avoid IndexedDB schema/data residue
+      // across SDK upgrades (e.g. 0.12 -> 0.13).
+      const storeName = `private-partial-${Date.now()}`;
+      log(`Store: ${storeName}`);
+      const client = await WebClient.createClient(
+        rpcUrl,
+        undefined,
+        undefined,
+        storeName,
+      );
       log("WebClient created");
 
       await client.syncState();
       const syncHeight = await client.getSyncHeight();
       log(`Synced to block: ${syncHeight}`);
 
-      // =========================================================================
+      // ====================================================== ===================
       // PHASE 2: Create Faucets (still PUBLIC accounts - only notes are private)
       // =========================================================================
       setPhase("create-faucets");
@@ -179,34 +185,8 @@ export default function PrivatePartialFillTestPage() {
       log("============================================================");
 
       // Helper: Convert hex string to AccountId (avoids WASM GC issues)
-      const { AccountId } = await import("@demox-labs/miden-sdk");
+      const { AccountId } = await import("@miden-sdk/miden-sdk");
       const toAccountId = (hex: string) => AccountId.fromHex(hex);
-
-      /**
-       * Build swap tag from asset pair
-       * KEY DIFFERENCE: For private notes, use forLocalUseCase instead of forPublicUseCase
-       */
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const buildSwapTag = (noteType: any, offeredFaucetId: any, requestedFaucetId: any) => {
-        const SWAP_USE_CASE_ID = 0;
-
-        // Get bits 56..63 (top 8 bits) from each faucet ID prefix
-        const offeredPrefix = offeredFaucetId.prefix().asInt();
-        const offeredTag = Number((offeredPrefix >> BigInt(56)) & BigInt(0xFF));
-
-        const requestedPrefix = requestedFaucetId.prefix().asInt();
-        const requestedTag = Number((requestedPrefix >> BigInt(56)) & BigInt(0xFF));
-
-        // Payload = offered_tag (high 8 bits) | requested_tag (low 8 bits)
-        const payload = (offeredTag << 8) | requestedTag;
-
-        if (noteType === NoteType.Public) {
-          return NoteTag.forPublicUseCase(SWAP_USE_CASE_ID, payload, NoteExecutionMode.newLocal());
-        } else {
-          // PRIVATE: Use forLocalUseCase
-          return NoteTag.forLocalUseCase(SWAP_USE_CASE_ID, payload);
-        }
-      };
 
       // GOLD faucet (offered token)
       log("");
@@ -321,13 +301,13 @@ export default function PrivatePartialFillTestPage() {
       await client.applyTransaction(mintGoldResult, mintGoldHeight);
       log("  GOLD mint transaction submitted");
 
-      // Mint SILVER to taker
-      log(`Minting ${FILL_AMOUNT} SILVER to Taker...`);
+      // Mint enough SILVER for both partial and full-fill diagnostics
+      log(`Minting ${REQUESTED_AMOUNT} SILVER to Taker...`);
       const mintSilverReq = client.newMintTransactionRequest(
         takerId,
         silverFaucetId,
         NoteType.Public, // Mint as PUBLIC so it can be consumed
-        FILL_AMOUNT,
+        REQUESTED_AMOUNT,
       );
       const mintSilverResult = await client.executeTransaction(
         silverFaucetId,
@@ -352,15 +332,16 @@ export default function PrivatePartialFillTestPage() {
       log("--- Consuming Minted Notes ---");
 
       // Get consumable notes for maker
-      const makerConsumable = await client.getConsumableNotes(toAccountId(makerIdHex));
+      const makerConsumable = await client.getConsumableNotes(
+        toAccountId(makerIdHex),
+      );
       log(`  Maker has ${makerConsumable.length} consumable notes`);
 
       if (makerConsumable.length > 0) {
-        const makerNoteIds = makerConsumable.map((n) =>
-          n.inputNoteRecord().id().toString(),
+        const makerNotes = makerConsumable.map((n) =>
+          n.inputNoteRecord().toNote(),
         );
-        const makerConsumeReq =
-          client.newConsumeTransactionRequest(makerNoteIds);
+        const makerConsumeReq = client.newConsumeTransactionRequest(makerNotes);
         const makerConsumeResult = await client.executeTransaction(
           toAccountId(makerIdHex),
           makerConsumeReq,
@@ -376,12 +357,14 @@ export default function PrivatePartialFillTestPage() {
       }
 
       // Consume for taker
-      const takerConsumable = await client.getConsumableNotes(toAccountId(takerIdHex));
+      const takerConsumable = await client.getConsumableNotes(
+        toAccountId(takerIdHex),
+      );
       log(`  Taker has ${takerConsumable.length} consumable notes`);
 
       if (takerConsumable.length > 0) {
         const takerNoteIds = takerConsumable.map((n) =>
-          n.inputNoteRecord().id().toString(),
+          n.inputNoteRecord().toNote(),
         );
         const takerConsumeReq =
           client.newConsumeTransactionRequest(takerNoteIds);
@@ -406,345 +389,318 @@ export default function PrivatePartialFillTestPage() {
       await client.syncState();
 
       // =========================================================================
-      // PHASE 5: Create PRIVATE PSWAP Note
+      // Shared helpers for flow creation and fills
+      // =========================================================================
+      const { PSWAP_PRIVATE_MASM, NOTE_TYPE } =
+        await import("@/lib/masm/pswap");
+      const builder = client.createCodeBuilder();
+      const noteScript = builder.compileNoteScript(PSWAP_PRIVATE_MASM);
+      const makerIdFresh = toAccountId(makerIdHex);
+      const goldFaucetIdFresh = toAccountId(goldFaucetIdHex);
+      const silverFaucetIdFresh = toAccountId(silverFaucetIdHex);
+      const creatorPrefix = makerIdFresh.prefix().asInt();
+      const creatorSuffix = makerIdFresh.suffix().asInt();
+      const reqSuffix = silverFaucetIdFresh.suffix().asInt();
+      const reqPrefix = silverFaucetIdFresh.prefix().asInt();
+      let swappSerialCounter = BigInt(10);
+
+      const consumeAllConsumable = async (
+        accountHex: string,
+        label: string,
+      ) => {
+        const consumable = await client.getConsumableNotes(
+          toAccountId(accountHex),
+        );
+        log(`  ${label} has ${consumable.length} consumable notes`);
+        if (consumable.length === 0) return;
+        const notes = consumable.map((n) => n.inputNoteRecord().toNote());
+        const consumeReq = client.newConsumeTransactionRequest(notes);
+        const consumeResult = await client.executeTransaction(
+          toAccountId(accountHex),
+          consumeReq,
+        );
+        const consumeProven = await client.proveTransaction(consumeResult);
+        const consumeHeight = await client.submitProvenTransaction(
+          consumeProven,
+          consumeResult,
+        );
+        await client.applyTransaction(consumeResult, consumeHeight);
+        log(`  ${label} consumed note(s)`);
+      };
+
+      const createSwappNote = async (
+        flowLabel: string,
+        swappNoteType: any,
+        outputNoteType: bigint,
+      ) => {
+        const noteTypeLabel =
+          swappNoteType === NoteType.Public ? "PUBLIC" : "PRIVATE";
+        log("");
+        log(`--- ${flowLabel}: create ${noteTypeLabel} SWAPP note ---`);
+        const swappTag = WebClient.buildSwapTag(
+          swappNoteType,
+          goldFaucetIdFresh,
+          OFFERED_AMOUNT,
+          silverFaucetIdFresh,
+          REQUESTED_AMOUNT,
+        );
+        const p2idTag = NoteTag.withAccountTarget(makerIdFresh);
+        const noteInputs = new NoteInputs(
+          new MidenArrays.FeltArray([
+            new Felt(REQUESTED_AMOUNT), // 0: requested_amount
+            new Felt(BigInt(0)), // 1: zero
+            new Felt(BigInt(reqSuffix)), // 2: faucet_suffix
+            new Felt(BigInt(reqPrefix)), // 3: faucet_prefix
+            new Felt(BigInt(swappTag.asU32())), // 4: swapp_tag
+            new Felt(BigInt(p2idTag.asU32())), // 5: p2id_tag
+            new Felt(BigInt(0)), // 6: empty
+            new Felt(BigInt(0)), // 7: empty
+            new Felt(BigInt(0)), // 8: swap_count
+            new Felt(BigInt(0)), // 9: expiration_block
+            new Felt(BigInt(0)), // 10: empty
+            new Felt(BigInt(0)), // 11: empty
+            new Felt(BigInt(creatorPrefix)), // 12: creator_prefix
+            new Felt(BigInt(creatorSuffix)), // 13: creator_suffix
+            new Felt(outputNoteType), // 14: NOTE_TYPE_OUTPUT
+          ]),
+        );
+
+        swappSerialCounter = swappSerialCounter + BigInt(1);
+        const serialNum = new Word(
+          new BigUint64Array([
+            BigInt(1),
+            BigInt(2),
+            BigInt(3),
+            swappSerialCounter,
+          ]),
+        );
+
+        const swappNote = new Note(
+          new NoteAssets([
+            new FungibleAsset(goldFaucetIdFresh, OFFERED_AMOUNT),
+          ]),
+          new NoteMetadata(makerIdFresh, swappNoteType, swappTag),
+          new NoteRecipient(serialNum, noteScript, noteInputs),
+        );
+        const swappNoteId = swappNote.id().toString();
+        setState((prev) => ({ ...prev, pswapNoteId: swappNoteId }));
+        log(`  Note ID: ${swappNoteId}`);
+        log(
+          `  NOTE_TYPE_OUTPUT: ${outputNoteType} (${outputNoteType === NOTE_TYPE.PUBLIC ? "PUBLIC" : "PRIVATE"})`,
+        );
+
+        const createReq = new TransactionRequestBuilder()
+          .withOwnOutputNotes(
+            new MidenArrays.OutputNoteArray([OutputNote.full(swappNote)]),
+          )
+          .build();
+        const createResult = await client.executeTransaction(
+          toAccountId(makerIdHex),
+          createReq,
+        );
+        const createProven = await client.proveTransaction(createResult);
+        const createHeight = await client.submitProvenTransaction(
+          createProven,
+          createResult,
+        );
+        await client.applyTransaction(createResult, createHeight);
+        log(`  ${flowLabel}: SWAPP note submitted`);
+        log("  Waiting for SWAPP creation to commit (12s)...");
+        await new Promise((r) => setTimeout(r, 12000));
+        await client.syncState();
+        return swappNote;
+      };
+
+      const executeFill = async (
+        flowLabel: string,
+        swappNote: any,
+        fillAmount: bigint,
+      ) => {
+        const { NoteAndArgs } = (await import("@miden-sdk/miden-sdk")) as any;
+        const noteArgs = new Word(
+          new BigUint64Array([BigInt(0), BigInt(0), BigInt(0), fillAmount]),
+        );
+        log("");
+        log(`--- ${flowLabel}: execute fill (${fillAmount} SILVER) ---`);
+        const takerBefore = await client.getAccount(toAccountId(takerIdHex));
+        if (takerBefore) {
+          log("  Taker balances before fill:");
+          for (const asset of takerBefore.vault().fungibleAssets()) {
+            log(`    ${asset.faucetId().toString()}: ${asset.amount()}`);
+          }
+        }
+
+        const noteAndArgs = new NoteAndArgs(
+          Note.deserialize(swappNote.serialize()),
+          noteArgs,
+        );
+        const fillReq = new TransactionRequestBuilder()
+          .withInputNotes(new MidenArrays.NoteAndArgsArray([noteAndArgs]))
+          .build();
+        const fillResult = await client.executeTransaction(
+          toAccountId(takerIdHex),
+          fillReq,
+        );
+        const fillProven = await client.proveTransaction(fillResult);
+        const fillHeight = await client.submitProvenTransaction(
+          fillProven,
+          fillResult,
+        );
+        await client.applyTransaction(fillResult, fillHeight);
+        log(`  ${flowLabel}: tx submitted (${fillResult.id().toHex()})`);
+        log("  Waiting for fill transaction to commit (12s)...");
+        await new Promise((r) => setTimeout(r, 12000));
+        await client.syncState();
+
+        const takerAfter = await client.getAccount(toAccountId(takerIdHex));
+        if (takerAfter) {
+          log("  Taker balances after fill:");
+          for (const asset of takerAfter.vault().fungibleAssets()) {
+            log(`    ${asset.faucetId().toString()}: ${asset.amount()}`);
+          }
+        }
+      };
+
+      // =========================================================================
+      // PHASE 5: Flow 1 - PUBLIC full fill
       // =========================================================================
       setPhase("create-swapp");
       log("");
       log("============================================================");
-      log("PHASE 5: CREATE PRIVATE PSWAP NOTE");
+      log("PHASE 5: FLOW 1 - CREATE PUBLIC SWAPP NOTE");
       log("============================================================");
-      log("");
-      log("*** USING NoteType.Private FOR THE PSWAP NOTE ***");
-      log(`Offer: ${OFFERED_AMOUNT} GOLD for ${REQUESTED_AMOUNT} SILVER (1:1 ratio)`);
-
-      // Import PSWAP_PRIVATE script with 15 inputs
-      const { PSWAP_PRIVATE_MASM, NOTE_TYPE } = await import("@/lib/masm/pswap-private");
-      const builder = client.createScriptBuilder();
-      const noteScript = builder.compileNoteScript(PSWAP_PRIVATE_MASM);
-
-      // Build offered asset
-      const offeredAsset = new FungibleAsset(toAccountId(goldFaucetIdHex), OFFERED_AMOUNT);
-
-      // Build requested asset word [amount, 0, suffix, prefix]
-      const silverFaucetIdFresh = toAccountId(silverFaucetIdHex);
-      const reqSuffix = silverFaucetIdFresh.suffix().asInt();
-      const reqPrefix = silverFaucetIdFresh.prefix().asInt();
-
-      log("");
-      log("=== REQUESTED_ASSET WORD (indices 0-3) ===");
-      log(
-        `  [0] amount: ${REQUESTED_AMOUNT} (0x${REQUESTED_AMOUNT.toString(16).padStart(16, "0")})`,
-      );
-      log(`  [1] zero:   0 (0x${"0".padStart(16, "0")})`);
-      log(
-        `  [2] suffix: ${reqSuffix} (0x${reqSuffix.toString(16).padStart(16, "0")})`,
-      );
-      log(
-        `  [3] prefix: ${reqPrefix} (0x${reqPrefix.toString(16).padStart(16, "0")})`,
+      const flow1Swapp = await createSwappNote(
+        "Flow 1 (public full fill)",
+        NoteType.Public,
+        NOTE_TYPE.PUBLIC,
       );
 
-      // Build note inputs (15 felts - INCLUDING NOTE_TYPE_OUTPUT)
-      const makerIdFresh = toAccountId(makerIdHex);
-      // PRIVATE swap tag using forLocalUseCase
-      const swappTag = buildSwapTag(NoteType.Private, toAccountId(goldFaucetIdHex), toAccountId(silverFaucetIdHex));
-      const p2idTag = NoteTag.fromAccountId(makerIdFresh);
-      const creatorPrefix = makerIdFresh.prefix().asInt();
-      const creatorSuffix = makerIdFresh.suffix().asInt();
-
-      const noteInputsArray = [
-        new Felt(REQUESTED_AMOUNT), // 0: requested_amount
-        new Felt(BigInt(0)), // 1: zero
-        new Felt(BigInt(reqSuffix)), // 2: faucet_suffix
-        new Felt(BigInt(reqPrefix)), // 3: faucet_prefix
-        new Felt(BigInt(swappTag.asU32())), // 4: swapp_tag
-        new Felt(BigInt(p2idTag.asU32())), // 5: p2id_tag
-        new Felt(BigInt(0)), // 6: empty
-        new Felt(BigInt(0)), // 7: empty
-        new Felt(BigInt(0)), // 8: swap_count
-        new Felt(BigInt(0)), // 9: expiration_block (0 = no expiration)
-        new Felt(BigInt(0)), // 10: empty
-        new Felt(BigInt(0)), // 11: empty
-        new Felt(BigInt(creatorPrefix)), // 12: creator_prefix
-        new Felt(BigInt(creatorSuffix)), // 13: creator_suffix
-        new Felt(NOTE_TYPE.PRIVATE), // 14: NOTE_TYPE_OUTPUT = 0 (PRIVATE)
-      ];
-
-      log("");
-      log("=== ALL 15 NOTE INPUTS (NEW: includes NOTE_TYPE_OUTPUT) ===");
-      const inputNames = [
-        "requested_amount",
-        "zero",
-        "faucet_suffix",
-        "faucet_prefix",
-        "swapp_tag",
-        "p2id_tag",
-        "empty",
-        "empty",
-        "swap_count",
-        "expiration_block",
-        "empty",
-        "empty",
-        "creator_prefix",
-        "creator_suffix",
-        "NOTE_TYPE_OUTPUT", // NEW INPUT
-      ];
-      for (let i = 0; i < noteInputsArray.length; i++) {
-        const val = noteInputsArray[i].asInt();
-        const extra = i === 14 ? (val === BigInt(2) ? " (PRIVATE)" : " (PUBLIC)") : "";
-        log(
-          `  input[${i.toString().padStart(2)}] (${inputNames[i].padEnd(16)}): ${val.toString().padStart(20)} (0x${val.toString(16).padStart(16, "0")})${extra}`,
-        );
-      }
-
-      const noteInputs = new NoteInputs(
-        new MidenArrays.FeltArray(noteInputsArray),
-      );
-
-      // Build note components - PRIVATE note type
-      const noteAssets = new NoteAssets([offeredAsset]);
-      const noteMetadata = new NoteMetadata(
-        makerIdFresh,
-        NoteType.Private, // KEY: Creating PRIVATE note
-        swappTag,
-        NoteExecutionHint.always(),
-        new Felt(BigInt(0)),
-      );
-      const serialNum = new Word(
-        new BigUint64Array([BigInt(1), BigInt(2), BigInt(3), BigInt(4)]),
-      );
-      const recipient = new NoteRecipient(serialNum, noteScript, noteInputs);
-      const swappNote = new Note(noteAssets, noteMetadata, recipient);
-      const swappNoteId = swappNote.id().toString();
-      setState((prev) => ({ ...prev, swappNoteId }));
-
-      log("");
-      log("=== PRIVATE PSWAP NOTE CREATED ===");
-      log(`  Note ID: ${swappNoteId}`);
-      log(`  Note Type: PRIVATE`);
-      log(`  Tag: ${swappTag.asU32()} (forLocalUseCase)`);
-      log(`  NOTE_TYPE_OUTPUT input[14]: ${NOTE_TYPE.PRIVATE} (PRIVATE)`);
-
-      // Submit SWAPP creation
-      const outputNote = OutputNote.full(swappNote);
-      const swappTxReq = new TransactionRequestBuilder()
-        .withOwnOutputNotes(new MidenArrays.OutputNoteArray([outputNote]))
-        .build();
-
-      const swappTxResult = await client.executeTransaction(
-        toAccountId(makerIdHex),
-        swappTxReq,
-      );
-      const swappTxProven = await client.proveTransaction(swappTxResult);
-      const swappTxHeight = await client.submitProvenTransaction(
-        swappTxProven,
-        swappTxResult,
-      );
-      await client.applyTransaction(swappTxResult, swappTxHeight);
-      log("");
-      log("  PRIVATE SWAPP transaction submitted");
-
-      // For PRIVATE notes, we use withUnauthenticatedInputNotes with the full Note object
-      // In production, the note would be shared via post office or direct export
-      // For this test, we keep the swappNote object and pass it directly to the transaction
-      log("");
-      log("--- PRIVATE NOTE: Will use withUnauthenticatedInputNotes ---");
-      log("  (Private notes require full Note object, not just note ID)");
-
-      // Wait for SWAPP creation to commit
-      log("");
-      log("Waiting for SWAPP creation to commit (12s)...");
-      await new Promise((r) => setTimeout(r, 12000));
-      await client.syncState();
-
-      // =========================================================================
-      // PHASE 6: Taker Fills 25%
-      // =========================================================================
       setPhase("fill-swapp");
       log("");
       log("============================================================");
-      log("PHASE 6: TAKER FILLS 25% (PRIVATE OUTPUT NOTES)");
+      log("PHASE 6: FLOW 1 - FULL FILL (1000)");
       log("============================================================");
-
-      const takerReceives = (FILL_AMOUNT * OFFERED_AMOUNT) / REQUESTED_AMOUNT;
-      const leftoverOffered = OFFERED_AMOUNT - takerReceives;
-      const leftoverRequested = REQUESTED_AMOUNT - FILL_AMOUNT;
-
-      log("");
-      log("Fill calculation:");
-      log(`  Fill amount:        ${FILL_AMOUNT} SILVER (taker sends)`);
-      log(`  Taker receives:     ${takerReceives} GOLD`);
-      log(`  Leftover offered:   ${leftoverOffered} GOLD (in new PRIVATE SWAPP)`);
-      log(`  Leftover requested: ${leftoverRequested} SILVER (in new PRIVATE SWAPP)`);
-
-      // Note args: [0, 0, 0, fill_amount]
-      const noteArgs = new Word(
-        new BigUint64Array([BigInt(0), BigInt(0), BigInt(0), FILL_AMOUNT]),
+      await executeFill(
+        "Flow 1 (public full fill)",
+        flow1Swapp,
+        REQUESTED_AMOUNT,
       );
 
+      // =========================================================================
+      // PHASE 7: Top up balances for partial-flow run
+      // =========================================================================
+      setPhase("mint-tokens");
       log("");
-      log("=== NOTE ARGS ===");
-      log(`  [0]: 0`);
-      log(`  [1]: 0`);
-      log(`  [2]: 0`);
-      log(`  [3]: ${FILL_AMOUNT} (fill_amount)`);
-
-      // Check taker's balance before fill
-      const takerAcctBefore = await client.getAccount(toAccountId(takerIdHex));
-      if (takerAcctBefore) {
-        const takerAssetsBefore = takerAcctBefore.vault().fungibleAssets();
-        log("");
-        log("--- Taker balance BEFORE fill ---");
-        for (const asset of takerAssetsBefore) {
-          log(`  ${asset.faucetId().toString()}: ${asset.amount()}`);
-        }
-      }
-
-      log("");
-      log("--- Building fill transaction with PRIVATE expected future notes ---");
-
-      const sdk = await import("@demox-labs/miden-sdk");
-      const { NoteDetails, NoteDetailsAndTag, NoteDetailsAndTagArray, NoteRecipientArray, Rpo256, NoteScript } = sdk as any;
-
-      // Compute P2ID serial
-      const swapSerialFelts = [new Felt(BigInt(1)), new Felt(BigInt(2)), new Felt(BigInt(3)), new Felt(BigInt(4))];
-      const nextSwapCount = BigInt(1);
-      const swapCountFelts = [new Felt(nextSwapCount), new Felt(BigInt(0)), new Felt(BigInt(0)), new Felt(BigInt(0))];
-      const p2idSerialWord = Rpo256.hashElements(new MidenArrays.FeltArray([...swapSerialFelts, ...swapCountFelts]));
-
-      // Build P2ID recipient
-      const p2idMakerId = toAccountId(makerIdHex);
-      const p2idScript = NoteScript.p2id();
-      const p2idNoteInputs = new NoteInputs(new MidenArrays.FeltArray([
-        new Felt(p2idMakerId.suffix().asInt()),
-        new Felt(p2idMakerId.prefix().asInt()),
-      ]));
-      const p2idRecipient = new NoteRecipient(p2idSerialWord, p2idScript, p2idNoteInputs);
-
-      // Build P2ID note assets and tag
-      const p2idSilverAsset = new FungibleAsset(toAccountId(silverFaucetIdHex), FILL_AMOUNT);
-      const p2idNoteAssets = new NoteAssets([p2idSilverAsset]);
-      // P2ID tag uses fromAccountId (unchanged - this is for discovery routing)
-      const p2idNoteTag = NoteTag.fromAccountId(p2idMakerId);
-
-      const p2idNoteDetails = new NoteDetails(p2idNoteAssets, p2idRecipient);
-      const p2idDetailsAndTag = new NoteDetailsAndTag(p2idNoteDetails, p2idNoteTag);
-      log(`  Built expected P2ID note (will be PRIVATE via MASM input)`);
-
-      // Build expected leftover SWAPP note details
-      const leftoverGoldAsset = new FungibleAsset(toAccountId(goldFaucetIdHex), leftoverOffered);
-      const leftoverNoteAssets = new NoteAssets([leftoverGoldAsset]);
-      const leftoverSwappTag = buildSwapTag(NoteType.Private, toAccountId(goldFaucetIdHex), toAccountId(silverFaucetIdHex));
-
-      // Build leftover inputs (15 felts - with NOTE_TYPE_OUTPUT = PRIVATE)
-      const leftoverSilverFaucetId = toAccountId(silverFaucetIdHex);
-      const leftoverReqSuffix = leftoverSilverFaucetId.suffix().asInt();
-      const leftoverReqPrefix = leftoverSilverFaucetId.prefix().asInt();
-      const leftoverMakerId = toAccountId(makerIdHex);
-      const leftoverCreatorPrefix = leftoverMakerId.prefix().asInt();
-      const leftoverCreatorSuffix = leftoverMakerId.suffix().asInt();
-
-      const leftoverInputsArray = [
-        new Felt(leftoverRequested), // 0: remaining requested_amount (750)
-        new Felt(BigInt(0)), // 1: zero
-        new Felt(BigInt(leftoverReqSuffix)), // 2: faucet_suffix
-        new Felt(BigInt(leftoverReqPrefix)), // 3: faucet_prefix
-        new Felt(BigInt(leftoverSwappTag.asU32())), // 4: swapp_tag
-        new Felt(BigInt(p2idTag.asU32())), // 5: p2id_tag
-        new Felt(BigInt(0)), // 6: empty
-        new Felt(BigInt(0)), // 7: empty
-        new Felt(BigInt(1)), // 8: swap_count (incremented)
-        new Felt(BigInt(0)), // 9: expiration_block
-        new Felt(BigInt(0)), // 10: empty
-        new Felt(BigInt(0)), // 11: empty
-        new Felt(BigInt(leftoverCreatorPrefix)), // 12: creator_prefix
-        new Felt(BigInt(leftoverCreatorSuffix)), // 13: creator_suffix
-        new Felt(NOTE_TYPE.PRIVATE), // 14: NOTE_TYPE_OUTPUT = PRIVATE (inherited)
-      ];
-
-      const leftoverNoteInputs = new NoteInputs(
-        new MidenArrays.FeltArray(leftoverInputsArray),
+      log("============================================================");
+      log("PHASE 7: TOP UP TOKENS FOR PARTIAL FLOW");
+      log("============================================================");
+      log(`Minting ${OFFERED_AMOUNT} GOLD to Maker...`);
+      const topupGoldReq = client.newMintTransactionRequest(
+        toAccountId(makerIdHex),
+        goldFaucetIdFresh,
+        NoteType.Public,
+        OFFERED_AMOUNT,
       );
-
-      const leftoverNoteScript = builder.compileNoteScript(PSWAP_PRIVATE_MASM);
-      const leftoverSerialNum = new Word(
-        new BigUint64Array([BigInt(1), BigInt(2), BigInt(3), BigInt(5)]),
+      const topupGoldResult = await client.executeTransaction(
+        goldFaucetIdFresh,
+        topupGoldReq,
       );
-      const leftoverRecipient = new NoteRecipient(leftoverSerialNum, leftoverNoteScript, leftoverNoteInputs);
+      const topupGoldProven = await client.proveTransaction(topupGoldResult);
+      const topupGoldHeight = await client.submitProvenTransaction(
+        topupGoldProven,
+        topupGoldResult,
+      );
+      await client.applyTransaction(topupGoldResult, topupGoldHeight);
+      log("  GOLD top-up submitted");
 
-      const leftoverNoteDetails = new NoteDetails(leftoverNoteAssets, leftoverRecipient);
-      const leftoverDetailsAndTag = new NoteDetailsAndTag(leftoverNoteDetails, leftoverSwappTag);
-      log(`  Built expected leftover SWAPP note (will be PRIVATE via MASM input)`);
+      log(`Minting ${FILL_AMOUNT} SILVER to Taker...`);
+      const topupSilverReq = client.newMintTransactionRequest(
+        toAccountId(takerIdHex),
+        silverFaucetIdFresh,
+        NoteType.Public,
+        FILL_AMOUNT,
+      );
+      const topupSilverResult = await client.executeTransaction(
+        silverFaucetIdFresh,
+        topupSilverReq,
+      );
+      const topupSilverProven =
+        await client.proveTransaction(topupSilverResult);
+      const topupSilverHeight = await client.submitProvenTransaction(
+        topupSilverProven,
+        topupSilverResult,
+      );
+      await client.applyTransaction(topupSilverResult, topupSilverHeight);
+      log("  SILVER top-up submitted");
 
-      const expectedRecipients = new NoteRecipientArray([
-        p2idRecipient,
-        leftoverRecipient,
-      ]);
-
-      // Build transaction using UNAUTHENTICATED input (for private notes)
-      // This requires the full Note object, not just the note ID
-      // Per Miden engineer: "You can use .withUnauthenticatedInputNotes() even if the note is authenticated"
-      const { NoteAndArgs } = sdk as any;
-      const noteAndArgs = new NoteAndArgs(swappNote, noteArgs);
-
-      log(`  Using withUnauthenticatedInputNotes with full Note object`);
-
-      const fillTxReq = new TransactionRequestBuilder()
-        .withUnauthenticatedInputNotes(new MidenArrays.NoteAndArgsArray([noteAndArgs]))
-        .withExpectedFutureNotes(new NoteDetailsAndTagArray([p2idDetailsAndTag, leftoverDetailsAndTag]))
-        .withExpectedOutputRecipients(expectedRecipients)
-        .build();
-
-      log("");
-      log("--- Submitting Fill Transaction ---");
-      log("  Expected outputs: P2ID (PRIVATE) + Leftover SWAPP (PRIVATE)");
-
-      const fillTxId = await client.submitNewTransaction(toAccountId(takerIdHex), fillTxReq);
-      log(`  Transaction submitted`);
-      log(`  Transaction ID: ${fillTxId.toHex()}`);
-
-      // Wait for transaction to commit
-      log("");
-      log("Waiting for fill transaction to commit (12s)...");
+      log("Waiting for top-up mints to commit (12s)...");
       await new Promise((r) => setTimeout(r, 12000));
       await client.syncState();
 
-      // Check taker's balance after fill
-      log("");
-      log("--- Verifying fill results ---");
-      const takerAcctAfter = await client.getAccount(toAccountId(takerIdHex));
-      if (takerAcctAfter) {
-        const takerAssetsAfter = takerAcctAfter.vault().fungibleAssets();
-        log(`  Taker vault after fill:`);
-        for (const asset of takerAssetsAfter) {
-          log(`    ${asset.faucetId().toString()}: ${asset.amount()}`);
-        }
-      }
+      log("--- Consuming top-up notes ---");
+      await consumeAllConsumable(makerIdHex, "Maker");
+      await consumeAllConsumable(takerIdHex, "Taker");
+      log("Waiting for top-up consumption to commit (12s)...");
+      await new Promise((r) => setTimeout(r, 12000));
+      await client.syncState();
 
       // =========================================================================
-      // PHASE 7: Maker Consumes P2ID Note
+      // PHASE 8: Flow 2 - PUBLIC partial fill
+      // =========================================================================
+      setPhase("create-swapp");
+      log("");
+      log("============================================================");
+      log("PHASE 8: FLOW 2 - CREATE PUBLIC SWAPP NOTE");
+      log("============================================================");
+      const flow2Swapp = await createSwappNote(
+        "Flow 2 (public partial fill)",
+        NoteType.Public,
+        NOTE_TYPE.PUBLIC,
+      );
+
+      setPhase("fill-swapp");
+      log("");
+      log("============================================================");
+      log("PHASE 9: FLOW 2 - PARTIAL FILL (250)");
+      log("============================================================");
+      const takerReceives = (FILL_AMOUNT * OFFERED_AMOUNT) / REQUESTED_AMOUNT;
+      const leftoverOffered = OFFERED_AMOUNT - takerReceives;
+      const leftoverRequested = REQUESTED_AMOUNT - FILL_AMOUNT;
+      log(`  Fill amount:        ${FILL_AMOUNT} SILVER`);
+      log(`  Taker receives:     ${takerReceives} GOLD`);
+      log(`  Leftover offered:   ${leftoverOffered} GOLD`);
+      log(`  Leftover requested: ${leftoverRequested} SILVER`);
+      await executeFill(
+        "Flow 2 (public partial fill)",
+        flow2Swapp,
+        FILL_AMOUNT,
+      );
+
+      // =========================================================================
+      // PHASE 10: Maker Consumes P2ID Notes
       // =========================================================================
       setPhase("consume-p2id");
       log("");
       log("============================================================");
-      log("PHASE 7: MAKER CONSUMES P2ID NOTE");
+      log("PHASE 10: MAKER CONSUMES P2ID NOTES");
       log("============================================================");
-      log("(P2ID note should have been created as PRIVATE)");
+      log("(P2ID notes should exist from full + partial fills)");
 
-      // For private P2ID, maker needs to receive it via sharing
-      // In this test, since both accounts are in the same client, we can try to find it
       log("");
       log("Waiting for P2ID note to be consumable (12s)...");
       await new Promise((r) => setTimeout(r, 12000));
       await client.syncState();
 
       // Get P2ID note for maker
-      const makerP2idNotes = await client.getConsumableNotes(toAccountId(makerIdHex));
+      const makerP2idNotes = await client.getConsumableNotes(
+        toAccountId(makerIdHex),
+      );
       log(`  Maker has ${makerP2idNotes.length} consumable notes`);
 
       // Consume P2ID
       if (makerP2idNotes.length > 0) {
         const p2idNoteIds = makerP2idNotes.map((n) =>
-          n.inputNoteRecord().id().toString(),
+          n.inputNoteRecord().toNote(),
         );
         log(`  Consuming P2ID notes: ${p2idNoteIds.join(", ")}`);
         const p2idConsumeReq = client.newConsumeTransactionRequest(p2idNoteIds);
@@ -760,18 +716,15 @@ export default function PrivatePartialFillTestPage() {
         );
         await client.applyTransaction(p2idConsumeResult, p2idConsumeHeight);
         log("  Maker consumed P2ID note(s)");
-      } else {
-        log("  Note: PRIVATE P2ID may not be auto-discoverable");
-        log("  In production, P2ID would be shared via post office");
       }
 
       // =========================================================================
-      // PHASE 8: Verify Final Balances
+      // PHASE 11: Verify Final Balances
       // =========================================================================
       setPhase("verify");
       log("");
       log("============================================================");
-      log("PHASE 8: VERIFY FINAL BALANCES");
+      log("PHASE 11: VERIFY FINAL BALANCES");
       log("============================================================");
 
       // Get account balances
@@ -807,10 +760,10 @@ export default function PrivatePartialFillTestPage() {
       log("============================================================");
       log("");
       log("KEY VERIFICATION POINTS:");
-      log("  1. PSWAP note was created as PRIVATE (NoteType.Private)");
-      log("  2. MASM script used NOTE_TYPE_OUTPUT input (input[14] = 0)");
-      log("  3. P2ID and leftover SWAPP should be PRIVATE (read from input)");
-      log("  4. Private notes are NOT visible on midenscan.com");
+      log("  1. Flow 1 (PUBLIC): full fill at 1000 completed");
+      log("  2. Flow 2 (PUBLIC): partial fill at 250 completed");
+      log("  3. Top-up minting/consumption between flows completed");
+      log("  4. PSWAP_PRIVATE_MASM NOTE_TYPE_OUTPUT was set to PUBLIC");
     } catch (error) {
       setPhase("error");
       log("");
@@ -825,19 +778,41 @@ export default function PrivatePartialFillTestPage() {
     }
   }, [log, logPrefixSuffix, setPhase]);
 
-  const isRunning = state.phase !== "idle" && state.phase !== "done" && state.phase !== "error";
+  const isRunning =
+    state.phase !== "idle" && state.phase !== "done" && state.phase !== "error";
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#000", color: "#fff", padding: "24px", fontFamily: "monospace" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#000",
+        color: "#fff",
+        padding: "24px",
+        fontFamily: "monospace",
+      }}
+    >
       <div style={{ maxWidth: "896px", margin: "0 auto" }}>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "16px" }}>
-          PRIVATE PSWAP Partial Fill Test
+        <h1
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: "bold",
+            marginBottom: "16px",
+          }}
+        >
+          PSWAP Full + Partial Flow Test
         </h1>
         <p style={{ color: "#9ca3af", marginBottom: "24px" }}>
-          Tests private swap note consumption with dynamic NOTE_TYPE_OUTPUT
+          Full-fill then partial-fill using dynamic NOTE_TYPE_OUTPUT
         </p>
 
-        <div style={{ display: "flex", gap: "16px", marginBottom: "24px", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "16px",
+            marginBottom: "24px",
+            alignItems: "center",
+          }}
+        >
           <button
             onClick={runTest}
             disabled={isRunning}
@@ -852,7 +827,7 @@ export default function PrivatePartialFillTestPage() {
             }}
           >
             {state.phase === "idle"
-              ? "Run Private Test"
+              ? "Run Flow Test"
               : state.phase === "done"
                 ? "Run Again"
                 : state.phase === "error"
@@ -865,7 +840,12 @@ export default function PrivatePartialFillTestPage() {
             <span
               style={{
                 fontFamily: "monospace",
-                color: state.phase === "error" ? "#ef4444" : state.phase === "done" ? "#22c55e" : "#eab308",
+                color:
+                  state.phase === "error"
+                    ? "#ef4444"
+                    : state.phase === "done"
+                      ? "#22c55e"
+                      : "#eab308",
               }}
             >
               {state.phase}
@@ -875,15 +855,34 @@ export default function PrivatePartialFillTestPage() {
 
         {/* Account IDs */}
         {(state.goldFaucetId || state.makerId) && (
-          <div style={{ marginBottom: "24px", padding: "16px", backgroundColor: "#111827", borderRadius: "8px", fontFamily: "monospace", fontSize: "0.875rem" }}>
-            <h2 style={{ fontSize: "1.125rem", fontWeight: "bold", marginBottom: "8px" }}>Accounts Created</h2>
+          <div
+            style={{
+              marginBottom: "24px",
+              padding: "16px",
+              backgroundColor: "#111827",
+              borderRadius: "8px",
+              fontFamily: "monospace",
+              fontSize: "0.875rem",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "1.125rem",
+                fontWeight: "bold",
+                marginBottom: "8px",
+              }}
+            >
+              Accounts Created
+            </h2>
             {state.goldFaucetId && <div>GOLD Faucet: {state.goldFaucetId}</div>}
             {state.silverFaucetId && (
               <div>SILVER Faucet: {state.silverFaucetId}</div>
             )}
             {state.makerId && <div>Maker (PRIVATE): {state.makerId}</div>}
             {state.takerId && <div>Taker (PRIVATE): {state.takerId}</div>}
-            {state.swappNoteId && <div>SWAPP Note (PRIVATE): {state.swappNoteId}</div>}
+            {state.pswapNoteId && (
+              <div>Latest SWAPP Note: {state.pswapNoteId}</div>
+            )}
             {state.p2idNoteId && <div>P2ID Note: {state.p2idNoteId}</div>}
             {state.leftoverNoteId && (
               <div>Leftover Note: {state.leftoverNoteId}</div>
@@ -892,12 +891,34 @@ export default function PrivatePartialFillTestPage() {
         )}
 
         {/* Logs */}
-        <div style={{ backgroundColor: "#111827", borderRadius: "8px", padding: "16px", fontFamily: "monospace", fontSize: "0.875rem", overflow: "auto", maxHeight: "600px" }}>
-          <h2 style={{ fontSize: "1.125rem", fontWeight: "bold", marginBottom: "8px" }}>Console Output</h2>
+        <div
+          style={{
+            backgroundColor: "#111827",
+            borderRadius: "8px",
+            padding: "16px",
+            fontFamily: "monospace",
+            fontSize: "0.875rem",
+            overflow: "auto",
+            maxHeight: "600px",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "1.125rem",
+              fontWeight: "bold",
+              marginBottom: "8px",
+            }}
+          >
+            Console Output
+          </h2>
           {state.logs.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>Click &quot;Run Private Test&quot; to start</p>
+            <p style={{ color: "#6b7280" }}>
+              Click &quot;Run Flow Test&quot; to start
+            </p>
           ) : (
-            <pre style={{ whiteSpace: "pre-wrap" }}>{state.logs.join("\n")}</pre>
+            <pre style={{ whiteSpace: "pre-wrap" }}>
+              {state.logs.join("\n")}
+            </pre>
           )}
         </div>
       </div>

@@ -21,7 +21,7 @@ To run the test: Navigate to http://localhost:3000/partial and click "Run Test"
 ### Tech Stack
 - Next.js 16 (with webpack, required for WASM support)
 - React 19
-- @demox-labs/miden-sdk 0.12.5 (Miden WebClient for browser-based blockchain interaction)
+- @miden-sdk/miden-sdk 0.12.5 (Miden WebClient for browser-based blockchain interaction)
 
 ### Key Files
 - `app/partial/page.tsx` - Main test page implementing the full PSWAP flow
