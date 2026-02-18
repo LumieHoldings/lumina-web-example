@@ -28,7 +28,7 @@
  * Note: The constant name `PSWAP_PRIVATE_MASM` is legacy; this script currently
  * emits PUBLIC output notes via `push.PUBLIC_NOTE`.
  */
-export const PSWAP_PRIVATE_MASM = `
+export const PSWAP_MASM = `
 use miden::protocol::active_note
 use miden::protocol::output_note
 use miden::protocol::note
@@ -684,14 +684,3 @@ export const P2ID_SCRIPT_ROOT = [
   BigInt("15691985194755641846"),
   BigInt("10399643920503194563"),
 ];
-
-/**
- * Note type values for the NOTE_TYPE_OUTPUT input
- * These match Miden's internal NoteType enum:
- * - Public = 1 (stored on-chain)
- * - Private = 2 (off-chain, only hash on-chain)
- */
-export const NOTE_TYPE = {
-  PUBLIC: BigInt(1),
-  PRIVATE: BigInt(2),
-} as const;

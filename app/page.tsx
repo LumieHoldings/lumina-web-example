@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { AccountId } from "@miden-sdk/miden-sdk";
-import { PSWAP_PRIVATE_MASM } from "@/lib/masm/pswap";
+import { PSWAP_MASM } from "@/lib/masm/pswap";
 
 const OFFERED_AMOUNT = BigInt(100_000);
 const REQUESTED_AMOUNT = BigInt(100_000);
@@ -96,8 +96,12 @@ export default function HomePage() {
       const prefix = id.prefix().asInt();
       const suffix = id.suffix().asInt();
       log(`  ${name} ID:     ${hex}`);
-      log(`  ${name} prefix:  ${prefix} (0x${prefix.toString(16).padStart(16, "0")})`);
-      log(`  ${name} suffix:  ${suffix} (0x${suffix.toString(16).padStart(16, "0")})`);
+      log(
+        `  ${name} prefix:  ${prefix} (0x${prefix.toString(16).padStart(16, "0")})`,
+      );
+      log(
+        `  ${name} suffix:  ${suffix} (0x${suffix.toString(16).padStart(16, "0")})`,
+      );
     },
     [log],
   );
@@ -152,7 +156,10 @@ export default function HomePage() {
       ) => {
         const txResult = await client.executeTransaction(accountId, request);
         const txProven = await client.proveTransaction(txResult);
-        const txHeight = await client.submitProvenTransaction(txProven, txResult);
+        const txHeight = await client.submitProvenTransaction(
+          txProven,
+          txResult,
+        );
         await client.applyTransaction(txResult, txHeight);
         log(label);
         return txResult;
@@ -305,7 +312,11 @@ export default function HomePage() {
             new Felt(targetPrefix),
           ]),
         );
-        const recipient = new NoteRecipient(serialNum, NoteScript.p2id(), p2idInputs);
+        const recipient = new NoteRecipient(
+          serialNum,
+          NoteScript.p2id(),
+          p2idInputs,
+        );
         const metadata = new NoteMetadata(
           senderId,
           NoteType.Public,
@@ -451,7 +462,9 @@ export default function HomePage() {
         toAccountId(makerIdHex),
       );
       if (makerConsumable.length > 0) {
-        const makerNotes = makerConsumable.map((n: any) => n.inputNoteRecord().toNote());
+        const makerNotes = makerConsumable.map((n: any) =>
+          n.inputNoteRecord().toNote(),
+        );
         const req = client.newConsumeTransactionRequest(makerNotes);
         await submitAndApply(
           toAccountId(makerIdHex),
@@ -464,7 +477,9 @@ export default function HomePage() {
         toAccountId(takerIdHex),
       );
       if (takerConsumable.length > 0) {
-        const takerNotes = takerConsumable.map((n: any) => n.inputNoteRecord().toNote());
+        const takerNotes = takerConsumable.map((n: any) =>
+          n.inputNoteRecord().toNote(),
+        );
         const req = client.newConsumeTransactionRequest(takerNotes);
         await submitAndApply(
           toAccountId(takerIdHex),
@@ -483,14 +498,16 @@ export default function HomePage() {
       log("============================================================");
       log("PHASE 4: CREATE PSWAP NOTE");
       log("============================================================");
-      log(`Offer: ${OFFERED_AMOUNT} GOLD for ${REQUESTED_AMOUNT} SILVER (1:1 ratio)`);
+      log(
+        `Offer: ${OFFERED_AMOUNT} GOLD for ${REQUESTED_AMOUNT} SILVER (1:1 ratio)`,
+      );
 
       const p2idRoot = NoteScript.p2id().root().toU64s();
       log(
         `SDK P2ID root words: [${p2idRoot[0]} ${p2idRoot[1]} ${p2idRoot[2]} ${p2idRoot[3]}]`,
       );
 
-      const pswapCodeWithInjectedRoot = injectP2idRoot(PSWAP_PRIVATE_MASM, p2idRoot);
+      const pswapCodeWithInjectedRoot = injectP2idRoot(PSWAP_MASM, p2idRoot);
       const noteScript = client
         .createCodeBuilder()
         .compileNoteScript(pswapCodeWithInjectedRoot);
@@ -625,7 +642,10 @@ export default function HomePage() {
           expectedP2id.metadata().tag(),
         ),
         new NoteDetailsAndTag(
-          new NoteDetails(expectedLeftover.assets(), expectedLeftover.recipient()),
+          new NoteDetails(
+            expectedLeftover.assets(),
+            expectedLeftover.recipient(),
+          ),
           expectedLeftover.metadata().tag(),
         ),
       ]);
@@ -657,7 +677,9 @@ export default function HomePage() {
       log(`  Maker:    https://testnet.midenscan.com/account/${makerIdHex}`);
       log(`  Taker:    https://testnet.midenscan.com/account/${takerIdHex}`);
       log(`  P2ID:     https://testnet.midenscan.com/note/${expectedP2idId}`);
-      log(`  Leftover: https://testnet.midenscan.com/note/${expectedLeftoverId}`);
+      log(
+        `  Leftover: https://testnet.midenscan.com/note/${expectedLeftoverId}`,
+      );
 
       log("");
       log("Waiting for fill to commit (45s)...");
@@ -725,13 +747,17 @@ export default function HomePage() {
         );
       }
 
-      log(`  Leftover SWAPP: ${leftoverOffered} GOLD (note ${expectedLeftoverId})`);
+      log(
+        `  Leftover SWAPP: ${leftoverOffered} GOLD (note ${expectedLeftoverId})`,
+      );
       log("");
       log("Done.");
       setPhase("done");
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : `Unknown error: ${String(error)}`;
+        error instanceof Error
+          ? error.message
+          : `Unknown error: ${String(error)}`;
       log("");
       log("============================================================");
       log("ERROR");
@@ -755,7 +781,13 @@ export default function HomePage() {
       }}
     >
       <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "12px" }}>
+        <h1
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: "bold",
+            marginBottom: "12px",
+          }}
+        >
           PSWAP Simple (Rust Port)
         </h1>
         <p style={{ color: "#9ca3af", marginBottom: "20px" }}>
@@ -832,7 +864,9 @@ export default function HomePage() {
             overflow: "auto",
           }}
         >
-          <h2 style={{ fontSize: "1.05rem", marginBottom: "8px" }}>Console Output</h2>
+          <h2 style={{ fontSize: "1.05rem", marginBottom: "8px" }}>
+            Console Output
+          </h2>
           {state.logs.length === 0 ? (
             <p style={{ color: "#6b7280" }}>
               Click &quot;Run PSWAP Simple&quot; to start.
