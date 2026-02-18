@@ -1,54 +1,67 @@
-# PSWAP Partial Fill Example
+# Lumina Web Miden Playground
 
-Working example of partial swap note consumption using the Miden WebClient SDK.
+WebClient playground for reproducing swap and partial-swap behavior on Miden testnet.
 
-## What This Test Does
+## Current Page
 
-1. Creates two faucets (GOLD and SILVER)
-2. Creates two wallets (Maker and Taker)
-3. Mints 1000 GOLD to Maker, 250 SILVER to Taker
-4. Maker creates a PSWAP note offering 1000 GOLD for 1000 SILVER
-5. Taker fills 25% (sends 250 SILVER, receives 250 GOLD)
-6. Maker consumes P2ID note (receives 250 SILVER)
-7. Verifies final balances:
-   - Maker: 750 GOLD + 250 SILVER
-   - Taker: 250 GOLD
+- `/`
+  - Main PSWAP simple runner.
+  - Port of Rust example flow (`pswap_simple.rs`) to WebClient TypeScript.
+  - Uses `lib/masm/pswap.ts`.
+  - Runs: create faucets/wallets, mint, consume mints, create PSWAP, taker 25% fill, maker consume P2ID, verify balances.
+
+## MASM Files
+
+- `lib/masm/pswap.ts`
+  - Current PSWAP script used by `/`.
+  - Expects **14 note inputs**.
+  - Output notes are currently hardcoded to `PUBLIC_NOTE`.
+  - The export name `PSWAP_PRIVATE_MASM` is legacy naming.
+
+## PSWAP Input Layout (Current `pswap.ts`)
+
+`14` felts:
+
+1. `0-3`: requested asset word `[amount, 0, faucet_suffix, faucet_prefix]`
+2. `4`: SWAPP tag
+3. `5`: P2ID tag
+4. `6-7`: parent serial words 0..1 (or zero for root)
+5. `8`: swap count
+6. `9`: expiration block
+7. `10-11`: parent serial words 2..3 (or zero for root)
+8. `12`: creator prefix
+9. `13`: creator suffix
+
+Note args for fill:
+
+- `[0, 0, 0, fill_amount]`
 
 ## Setup
+
+```bash
+npm install
+npm run dev
+```
+
+Or with pnpm:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Navigate to http://localhost:3000/partial and click "Run Test".
+Then open:
 
-## Files
-
-- `app/partial/page.tsx` - Test page that runs the full PSWAP flow
-- `lib/masm/pswap.ts` - PSWAP note script (MASM assembly)
-
-## Key Implementation Details
-
-The following were required to make partial fills work with the WebClient:
-
-1. **Swap tags must be built from asset pair** - Use `buildSwapTag(noteType, offeredFaucetId, requestedFaucetId)` instead of `NoteTag.fromAccountId()`
-
-2. **Fill transactions require expected future notes** - Use `TransactionRequestBuilder` with:
-   - `withAuthenticatedInputNotes()` - the SWAPP note being consumed
-   - `withExpectedFutureNotes()` - P2ID note + leftover SWAPP note details
-   - `withExpectedOutputRecipients()` - both recipients
-
-3. **Use `submitNewTransaction()`** - Instead of manual execute/prove/submit flow
+- [http://localhost:3000](http://localhost:3000)
 
 ## Environment
 
 - Node.js 18+
-- `@demox-labs/miden-sdk@0.12.5`
-- Next.js 16 (for WASM support)
+- Next.js 16
+- `@miden-sdk/miden-sdk@0.13.1`
 
 ## Notes
 
-- The test uses public accounts and notes for simplicity
-- Wait times are included to allow transactions to commit on testnet
-- AccountIds are stored as hex strings and converted back when needed (to avoid WASM GC issues)
+- The page uses an isolated store name per run to avoid IndexedDB residue across experiments.
+- Swap discovery depends on registering/using correct note tags.
+- Waits/polling are intentionally included for testnet commit/discovery timing.

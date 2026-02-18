@@ -8,21 +8,24 @@ importers:
 
   .:
     dependencies:
-      '@demox-labs/miden-sdk':
-        specifier: 0.12.5
-        version: 0.12.5(tslib@2.8.1)(typescript@5.9.3)
-      '@demox-labs/miden-wallet-adapter':
-        specifier: ^0.10.0
-        version: 0.10.0(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
+      '@miden-sdk/miden-sdk':
+        specifier: 0.13.1
+        version: 0.13.1(tslib@2.8.1)(typescript@5.9.3)
+      '@miden-sdk/miden-wallet-adapter':
+        specifier: 0.13.2
+        version: 0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+      '@miden-sdk/react':
+        specifier: 0.13.2
+        version: 0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4)
       next:
         specifier: 16.1.6
-        version: 16.1.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 16.1.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
-        specifier: 19.2.3
-        version: 19.2.3
+        specifier: 19.2.4
+        version: 19.2.4
       react-dom:
-        specifier: 19.2.3
-        version: 19.2.3(react@19.2.3)
+        specifier: 19.2.4
+        version: 19.2.4(react@19.2.4)
     devDependencies:
       '@types/node':
         specifier: 22.18.1
@@ -38,38 +41,6 @@ importers:
         version: 5.9.3
 
 packages:
-
-  '@demox-labs/miden-sdk@0.12.5':
-    resolution: {integrity: sha512-Oq+MKObtOEY3aro+q1coVSc2RKrIycWbz9hBvnxqIlUkHzn6iL8X4+TG8t14co03cyuVt1dz1F13w0ScQSBMuA==}
-
-  '@demox-labs/miden-wallet-adapter-base@0.10.0':
-    resolution: {integrity: sha512-BLPJdIz1eq/s8iUOkwGttpo04ShyqExaflS14lmgnyhXEDevTs5xWAu3ipgrVNEf79gYNeh4AQ/KKC29DsVXcQ==}
-
-  '@demox-labs/miden-wallet-adapter-miden@0.10.0':
-    resolution: {integrity: sha512-yvZVNRBRY+lvYnyZ+I/VdPBNH9GrMEw6iG//7pztHTQSicxIC8mQZSFEoV1xWWvQglMlpycyZnDMM+R5zv2AwQ==}
-    peerDependencies:
-      typescript: ^5.0.0
-
-  '@demox-labs/miden-wallet-adapter-react@0.10.0':
-    resolution: {integrity: sha512-498XMpvY5QyEDjYbS6CUjzgAuD7BZFL1LxYIWskIglK/TOEGWZEOINT+bsXgan4Bgd+ybfKcJNYY0aAmyPtc2A==}
-    peerDependencies:
-      react: ^19.1.1
-
-  '@demox-labs/miden-wallet-adapter-reactui@0.10.0':
-    resolution: {integrity: sha512-SdHq7ic6S4GXFcuIg8mtSSS/iFQeLOeBqJYlXh3LrHMGfKVQll9nRhGT1ZvJlXfQdC3/aX3fCNDqsgNzfosTjg==}
-    peerDependencies:
-      '@types/react': ^19.0.0
-      '@types/react-dom': ^19.0.0
-      react: ^19.1.1
-      react-dom: ^19.1.1
-
-  '@demox-labs/miden-wallet-adapter@0.10.0':
-    resolution: {integrity: sha512-pCyV1vnhwNebBf8MEI6Tz6pbnMe5Kt9I/XiwOskA200o1wK1Sp7z8b3MdLnjyXNe7CXn3gJJFdBqzbU96vF1Lg==}
-    peerDependencies:
-      '@types/react': ^19.0.0
-      '@types/react-dom': ^19.0.0
-      react: ^19.1.1
-      react-dom: ^19.1.1
 
   '@emnapi/runtime@1.8.1':
     resolution: {integrity: sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg==}
@@ -222,6 +193,48 @@ packages:
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
     engines: {node: '>=12'}
+
+  '@miden-sdk/miden-sdk@0.13.1':
+    resolution: {integrity: sha512-GmlBBh3UhPQ6cNnU9l+CN6XrmlrRW6u2IDK5nZYhLc8wnbUgETj2UVbbWGKD51L5R4VXJeYk1fk4UMqTlpvf4w==}
+
+  '@miden-sdk/miden-wallet-adapter-base@0.13.2':
+    resolution: {integrity: sha512-DhuC/tVtB6JGuW0OZ5GmrmZLE75uUyzMUC0a4bYzN3+oAyYPy/oLEmsE4Ct0DWoSlZ5pQMOL1cTVjrR49sOUSA==}
+
+  '@miden-sdk/miden-wallet-adapter-miden@0.13.2':
+    resolution: {integrity: sha512-vfCAyAA6gXe5lbwxq0tn7gCW937YDlWLXCGMO7FIfkGwXP2kuzDa0tm7TKO2sapOUURdRYqLzV5eFAOICVt4Gg==}
+    peerDependencies:
+      typescript: ^5.0.0
+
+  '@miden-sdk/miden-wallet-adapter-react@0.13.2':
+    resolution: {integrity: sha512-9DzFfi+Jx0OK/QU8JDe0xEV3XjUcjymON36HY/tiBbFwitGQlPKK/+l5biYsIR+Yl5I7JojDlsxvZWzVUR6KaQ==}
+    peerDependencies:
+      '@miden-sdk/react': ^0.13.0
+      react: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@miden-sdk/react':
+        optional: true
+
+  '@miden-sdk/miden-wallet-adapter-reactui@0.13.2':
+    resolution: {integrity: sha512-y2pUJ97H1IbO5jpo0IHeAzIgXmm2XtQrw1lL7xhmcc1uOuVxHm1zoN0q4UxQZuJecUQAGLT/wsAM37hDNO7CAQ==}
+    peerDependencies:
+      '@types/react': ^19.0.0
+      '@types/react-dom': ^19.0.0
+      react: ^19.1.1
+      react-dom: ^19.1.1
+
+  '@miden-sdk/miden-wallet-adapter@0.13.2':
+    resolution: {integrity: sha512-YvfyaWFbwky9q3EvbIBOnBqZ0Wen6InzmucfIFIu/kHIGpAos5LI/OjV+prKZZ2J0XUbhcgxa9TeT8Rc5keT+w==}
+    peerDependencies:
+      '@types/react': ^19.0.0
+      '@types/react-dom': ^19.0.0
+      react: ^19.1.1
+      react-dom: ^19.1.1
+
+  '@miden-sdk/react@0.13.2':
+    resolution: {integrity: sha512-78i3/5YUUwitqvJA02HVXZ61RXEOyaiRsm1agVUtOblOmazuIgMEW4P3gdlX9YUiGr06l9O+Rw1ol5FZCOJTXQ==}
+    peerDependencies:
+      '@miden-sdk/miden-sdk': ^0.13.0
+      react: '>=18.0.0'
 
   '@next/env@16.1.6':
     resolution: {integrity: sha512-N1ySLuZjnAtN3kFnwhAwPvZah8RJxKasD7x1f8shFqhncnWZn4JMfg37diLNuoHsLAlrDfM3g4mawVdtAG8XLQ==}
@@ -385,6 +398,7 @@ packages:
   glob@11.1.0:
     resolution: {integrity: sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw==}
     engines: {node: 20 || >=22}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   hasown@2.0.2:
@@ -474,13 +488,13 @@ packages:
     resolution: {integrity: sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==}
     engines: {node: ^10 || ^12 || >=14}
 
-  react-dom@19.2.3:
-    resolution: {integrity: sha512-yELu4WmLPw5Mr/lmeEpox5rw3RETacE++JgHqQzd2dg+YbJuat3jH4ingc+WPZhxaoFzdv9y33G+F7Nl5O0GBg==}
+  react-dom@19.2.4:
+    resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
     peerDependencies:
-      react: ^19.2.3
+      react: ^19.2.4
 
-  react@19.2.3:
-    resolution: {integrity: sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA==}
+  react@19.2.4:
+    resolution: {integrity: sha512-9nfp2hYpCwOjAN+8TZFGhtWEwgvWHXqESH8qT89AT/lWklpLON22Lc8pEtnpsZz7VmawabSU0gCjnj8aC0euHQ==}
     engines: {node: '>=0.10.0'}
 
   resolve@1.22.11:
@@ -573,54 +587,25 @@ packages:
     resolution: {integrity: sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==}
     engines: {node: '>=12'}
 
+  zustand@5.0.11:
+    resolution: {integrity: sha512-fdZY+dk7zn/vbWNCYmzZULHRrss0jx5pPFiOuMZ/5HJN6Yv3u+1Wswy/4MpZEkEGhtNH+pwxZB8OKgUBPzYAGg==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
+
 snapshots:
-
-  '@demox-labs/miden-sdk@0.12.5(tslib@2.8.1)(typescript@5.9.3)':
-    dependencies:
-      '@rollup/plugin-typescript': 12.3.0(tslib@2.8.1)(typescript@5.9.3)
-      dexie: 4.2.1
-      glob: 11.1.0
-    transitivePeerDependencies:
-      - rollup
-      - tslib
-      - typescript
-
-  '@demox-labs/miden-wallet-adapter-base@0.10.0':
-    dependencies:
-      eventemitter3: 5.0.4
-
-  '@demox-labs/miden-wallet-adapter-miden@0.10.0(typescript@5.9.3)':
-    dependencies:
-      '@demox-labs/miden-wallet-adapter-base': 0.10.0
-      nanoid: 5.1.6
-      typescript: 5.9.3
-
-  '@demox-labs/miden-wallet-adapter-react@0.10.0(react@19.2.3)':
-    dependencies:
-      '@demox-labs/miden-wallet-adapter-base': 0.10.0
-      react: 19.2.3
-
-  '@demox-labs/miden-wallet-adapter-reactui@0.10.0(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
-    dependencies:
-      '@demox-labs/miden-wallet-adapter-base': 0.10.0
-      '@demox-labs/miden-wallet-adapter-react': 0.10.0(react@19.2.3)
-      '@types/react': 19.2.7
-      '@types/react-dom': 19.2.3(@types/react@19.2.7)
-      react: 19.2.3
-      react-dom: 19.2.3(react@19.2.3)
-
-  '@demox-labs/miden-wallet-adapter@0.10.0(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)':
-    dependencies:
-      '@demox-labs/miden-wallet-adapter-base': 0.10.0
-      '@demox-labs/miden-wallet-adapter-miden': 0.10.0(typescript@5.9.3)
-      '@demox-labs/miden-wallet-adapter-react': 0.10.0(react@19.2.3)
-      '@demox-labs/miden-wallet-adapter-reactui': 0.10.0(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@types/react': 19.2.7
-      '@types/react-dom': 19.2.3(@types/react@19.2.7)
-      react: 19.2.3
-      react-dom: 19.2.3(react@19.2.3)
-    transitivePeerDependencies:
-      - typescript
 
   '@emnapi/runtime@1.8.1':
     dependencies:
@@ -738,6 +723,72 @@ snapshots:
       strip-ansi-cjs: strip-ansi@6.0.1
       wrap-ansi: 8.1.0
       wrap-ansi-cjs: wrap-ansi@7.0.0
+
+  '@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3)':
+    dependencies:
+      '@rollup/plugin-typescript': 12.3.0(tslib@2.8.1)(typescript@5.9.3)
+      dexie: 4.2.1
+      glob: 11.1.0
+    transitivePeerDependencies:
+      - rollup
+      - tslib
+      - typescript
+
+  '@miden-sdk/miden-wallet-adapter-base@0.13.2':
+    dependencies:
+      eventemitter3: 5.0.4
+
+  '@miden-sdk/miden-wallet-adapter-miden@0.13.2(typescript@5.9.3)':
+    dependencies:
+      '@miden-sdk/miden-wallet-adapter-base': 0.13.2
+      nanoid: 5.1.6
+      typescript: 5.9.3
+
+  '@miden-sdk/miden-wallet-adapter-react@0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)':
+    dependencies:
+      '@miden-sdk/miden-wallet-adapter-base': 0.13.2
+      '@miden-sdk/miden-wallet-adapter-miden': 0.13.2(typescript@5.9.3)
+      react: 19.2.4
+    optionalDependencies:
+      '@miden-sdk/react': 0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4)
+    transitivePeerDependencies:
+      - typescript
+
+  '@miden-sdk/miden-wallet-adapter-reactui@0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)':
+    dependencies:
+      '@miden-sdk/miden-wallet-adapter-base': 0.13.2
+      '@miden-sdk/miden-wallet-adapter-react': 0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+      '@types/react': 19.2.7
+      '@types/react-dom': 19.2.3(@types/react@19.2.7)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+    transitivePeerDependencies:
+      - '@miden-sdk/react'
+      - typescript
+
+  '@miden-sdk/miden-wallet-adapter@0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)':
+    dependencies:
+      '@miden-sdk/miden-wallet-adapter-base': 0.13.2
+      '@miden-sdk/miden-wallet-adapter-miden': 0.13.2(typescript@5.9.3)
+      '@miden-sdk/miden-wallet-adapter-react': 0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+      '@miden-sdk/miden-wallet-adapter-reactui': 0.13.2(@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4))(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+      '@types/react': 19.2.7
+      '@types/react-dom': 19.2.3(@types/react@19.2.7)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+    transitivePeerDependencies:
+      - '@miden-sdk/react'
+      - typescript
+
+  '@miden-sdk/react@0.13.2(@miden-sdk/miden-sdk@0.13.1(tslib@2.8.1)(typescript@5.9.3))(@types/react@19.2.7)(react@19.2.4)':
+    dependencies:
+      '@miden-sdk/miden-sdk': 0.13.1(tslib@2.8.1)(typescript@5.9.3)
+      react: 19.2.4
+      zustand: 5.0.11(@types/react@19.2.7)(react@19.2.4)
+    transitivePeerDependencies:
+      - '@types/react'
+      - immer
+      - use-sync-external-store
 
   '@next/env@16.1.6': {}
 
@@ -886,16 +937,16 @@ snapshots:
 
   nanoid@5.1.6: {}
 
-  next@16.1.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+  next@16.1.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       '@next/env': 16.1.6
       '@swc/helpers': 0.5.15
       baseline-browser-mapping: 2.9.17
       caniuse-lite: 1.0.30001765
       postcss: 8.4.31
-      react: 19.2.3
-      react-dom: 19.2.3(react@19.2.3)
-      styled-jsx: 5.1.6(react@19.2.3)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      styled-jsx: 5.1.6(react@19.2.4)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.1.6
       '@next/swc-darwin-x64': 16.1.6
@@ -931,12 +982,12 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  react-dom@19.2.3(react@19.2.3):
+  react-dom@19.2.4(react@19.2.4):
     dependencies:
-      react: 19.2.3
+      react: 19.2.4
       scheduler: 0.27.0
 
-  react@19.2.3: {}
+  react@19.2.4: {}
 
   resolve@1.22.11:
     dependencies:
@@ -1011,10 +1062,10 @@ snapshots:
     dependencies:
       ansi-regex: 6.2.2
 
-  styled-jsx@5.1.6(react@19.2.3):
+  styled-jsx@5.1.6(react@19.2.4):
     dependencies:
       client-only: 0.0.1
-      react: 19.2.3
+      react: 19.2.4
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
@@ -1039,3 +1090,8 @@ snapshots:
       ansi-styles: 6.2.3
       string-width: 5.1.2
       strip-ansi: 7.1.2
+
+  zustand@5.0.11(@types/react@19.2.7)(react@19.2.4):
+    optionalDependencies:
+      '@types/react': 19.2.7
+      react: 19.2.4

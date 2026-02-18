@@ -1,6 +1,6 @@
 {
   "name": "lumina-web-example",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
@@ -8,11 +8,12 @@
     "start": "next start --webpack"
   },
   "dependencies": {
-    "@demox-labs/miden-sdk": "0.12.5",
-    "@demox-labs/miden-wallet-adapter": "^0.10.0",
+    "@miden-sdk/miden-sdk": "0.13.1",
+    "@miden-sdk/miden-wallet-adapter": "0.13.2",
+    "@miden-sdk/react": "0.13.2",
     "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@types/node": "22.18.1",
