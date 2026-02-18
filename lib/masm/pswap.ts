@@ -25,8 +25,6 @@
  *   - Partial fill: P2ID note to creator + leftover PSWAP note
  *   - Full fill: P2ID note only (no leftover)
  *
- * Note: The constant name `PSWAP_PRIVATE_MASM` is legacy; this script currently
- * emits PUBLIC output notes via `push.PUBLIC_NOTE`.
  */
 export const PSWAP_MASM = `
 use miden::protocol::active_note

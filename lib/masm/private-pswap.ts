@@ -1,22 +1,21 @@
 /**
- * PSWAP Note Script - Partial Swap with Expiration (CLOB Format)
+ * PSWAP note script used by the current web tests.
  *
- * Based on miden-engine-be/masm/notes/pswap.masm with expiration support added.
- *
- * This script implements a partial swap note that:
- * 1. Can be partially filled - consumer specifies fill amount via note args
- * 2. Supports reclaim - creator can reclaim assets at any time
- * 3. Supports expiration - returns assets to creator after expiration block
+ * Current behavior:
+ * 1. Expects 15 note inputs.
+ * 2. Uses hardcoded `PUBLIC_NOTE` for output note creation.
+ * 3. Supports full fills and partial fills (with leftover PSWAP note).
  * 4. Creates P2ID payback notes for the requested asset amount
+ * 5. Has a flag between PUBLIC or PRIVATE notes
  *
  * Inputs (15 felts):
  *   0-3:   REQUESTED_ASSET_WORD [amount, 0, suffix, prefix] (FungibleAsset format)
  *   4:     SWAPP_TAG - NoteTag for the SWAPP note (for discoverability)
  *   5:     P2ID_TAG - NoteTag for P2ID payback notes to creator
- *   6-7:   EMPTY (reserved)
+ *   6-7:   PARENT_SERIAL_0..1 (or zero for root PSWAP)
  *   8:     SWAP_COUNT - Number of times this note has been partially filled
  *   9:     EXPIRATION_BLOCK - Block height after which note expires (0 = no expiration)
- *   10-11: EMPTY (reserved)
+ *   10-11: PARENT_SERIAL_2..3 (or zero for root PSWAP)
  *   12:    CREATOR_PREFIX - Creator account ID prefix
  *   13:    CREATOR_SUFFIX - Creator account ID suffix
  *   14:    NOTE_TYPE_OUTPUT - NoteType for output notes (1 = public, 2 = private)
@@ -27,7 +26,7 @@
  * Outputs:
  *   - If expired: Assets returned to creator via receive_asset
  *   - If creator reclaims: Assets returned to creator via receive_asset
- *   - Partial fill: P2ID note to creator (fill_amount) + leftover PSWAP note
+ *   - Partial fill: P2ID note to creator (fill_amount) + leftover PSWAP note owned by Maker
  *   - Full fill: P2ID note to creator (full requested_amount), no leftover
  *
  * Key Formula:
@@ -82,6 +81,7 @@ const PARENT_SERIAL_2 = 0x000A  # serial[2]
 const PARENT_SERIAL_3 = 0x000B  # serial[3] - top of original word
 const SWAPP_CREATOR_PREFIX_INPUT = 0x000C
 const SWAPP_CREATOR_SUFFIX_INPUT = 0x000D
+const NOTE_TYPE_OUTPUT_INPUT = 0x000E # input[14]
 
 # RESERVED INPUT MEMORY ADDRESSES 0 to 40
 
@@ -116,7 +116,7 @@ const NEW_ASSET_A = 0x0078
 # ERRORS
 # =================================================================================================
 
-# SWAP script expects exactly 9 note inputs
+# SWAP script expects exactly 15 note inputs
 const ERR_SWAP_WRONG_NUMBER_OF_INPUTS = "PSWAP wrong number of inputs"
 
 # SWAP script requires exactly one note asset
@@ -424,7 +424,7 @@ proc execute_SWAPp
     # => [num_inputs, inputs_ptr]
 
     # make sure the number of inputs is N
-    eq.14 assert.err=ERR_SWAP_WRONG_NUMBER_OF_INPUTS
+    eq.15 assert.err=ERR_SWAP_WRONG_NUMBER_OF_INPUTS
     # => [inputs_ptr]
 
     mem_loadw_be.REQUESTED_ASSET_WORD_INPUT
@@ -528,7 +528,7 @@ proc execute_SWAPp
     exec.build_p2id_recipient_hash
     # => [P2ID_RECIPIENT]
 
-    push.PUBLIC_NOTE
+    mem_load.NOTE_TYPE_OUTPUT_INPUT
     # => [note_type, P2ID_RECIPIENT]
 
     mem_load.P2ID_TAG_INPUT
@@ -586,7 +586,7 @@ proc execute_SWAPp
         mem_store.PARENT_SERIAL_0  # slot 6  <- serial[0]
         # => []
 
-        push.14.0
+        push.15.0
         # => [num_inputs, ptr]
 
         exec.note::compute_inputs_commitment
@@ -601,7 +601,7 @@ proc execute_SWAPp
         exec.note::build_recipient_hash
         # => [RECIPIENT_SWAPP]
 
-        push.PUBLIC_NOTE
+        mem_load.NOTE_TYPE_OUTPUT_INPUT
         # => [note_type, SWAPp_RECIPIENT]
 
         mem_load.SWAPP_TAG_INPUT
