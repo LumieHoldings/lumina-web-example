@@ -392,7 +392,7 @@ export default function PrivatePartialFillTestPage() {
       // Shared helpers for flow creation and fills
       // =========================================================================
       const { PSWAP_PRIVATE_MASM, NOTE_TYPE } =
-        await import("@/lib/masm/pswap");
+        await import("@/lib/masm/pswap-private");
       const builder = client.createCodeBuilder();
       const noteScript = builder.compileNoteScript(PSWAP_PRIVATE_MASM);
       const makerIdFresh = toAccountId(makerIdHex);
