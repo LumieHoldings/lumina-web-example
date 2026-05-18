@@ -26,6 +26,16 @@ const FILL_AMOUNT = BigInt(200);
 const FEE_BPS = BigInt(50);
 const BPS_DENOMINATOR = BigInt(10000);
 
+// Flip to "Private" to retest the previously-validated config.
+// "Public" is the new path the main repo must support; it relies on the
+// FE's Poseidon2 recipient-digest computation matching what the MASM
+// constructs at output_note::create time. Public emission means the
+// kernel validates digest via NoteBeforeCreated → advice-provider, so
+// any divergence between FE and MASM reverts at the kernel with
+// PublicNoteMissingDetails. Private skips that check (loss of discovery
+// only, not loss of funds).
+type NoteTypeMode = "Public" | "Private";
+
 // Expected derived amounts for partial fill (200/500):
 //   gross = (200 * 1000) / 500 = 400 GOLD
 //   fee   = floor(400 * 50 / 10_000) = 2 GOLD
@@ -36,6 +46,7 @@ const BPS_DENOMINATOR = BigInt(10000);
 export default function FeeSwapCreatePage() {
   const [log, setLog] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  const [noteTypeMode, setNoteTypeMode] = useState<NoteTypeMode>("Public");
   const append = (line: string) =>
     setLog((prev) => [
       ...prev,
@@ -43,6 +54,7 @@ export default function FeeSwapCreatePage() {
     ]);
 
   const handleRun = useCallback(async () => {
+    const NOTE_TYPE_MODE = noteTypeMode;
     setLog([]);
     setRunning(true);
     try {
@@ -152,7 +164,9 @@ export default function FeeSwapCreatePage() {
       // leftover PSWAP are all Private. Only the fee P2ID (emitted by MASM
       // with fixed NoteType::Public) needs its recipient registered in the
       // advice provider so the kernel's before_created event can validate.
-      const noteTypeValue = NoteType.Private;
+      const noteTypeValue =
+        NOTE_TYPE_MODE === "Public" ? NoteType.Public : NoteType.Private;
+      append(`Mode: ${NOTE_TYPE_MODE} (noteTypeValue=${noteTypeValue})`);
 
       // Resolve prefix/suffix from fresh AccountId instances. Each call
       // creates+drops the WASM proxy in-line to avoid aliasing reuse.
@@ -281,14 +295,19 @@ export default function FeeSwapCreatePage() {
       // `array contains a value of the wrong type`.
       const freshSerialFelts = () => swapSerialU64s.map((u) => new Felt(u));
 
-      // Maker P2ID serial: poseidon2.hashElements([swap_serial, next_count, 0, 0, 0])
+      // Maker P2ID serial: poseidon2.hashElements([swap_serial, 0, 0, 0, next_count])
+      // CORRECTED 2026-05-18 via Rust MockChain Public-mode test:
+      // MASM `mem_load.SWAP_COUNT_ITEM push.0.0.0` produces stack
+      // `[0, 0, 0, swap_count]` top-to-bottom. By "stack top = array
+      // index 0" convention (proven by fee P2ID), nextSwapCount belongs
+      // at array INDEX 3, NOT index 0.
       const makerP2idSerial = Poseidon2.hashElements(
         new MidenArrays.FeltArray([
           ...freshSerialFelts(),
+          new Felt(0n),
+          new Felt(0n),
+          new Felt(0n),
           new Felt(nextSwapCount),
-          new Felt(0n),
-          new Felt(0n),
-          new Felt(0n),
         ]),
       );
 
@@ -346,14 +365,23 @@ export default function FeeSwapCreatePage() {
       const feeP2idDetailsAndTag = new NoteDetailsAndTag(feeP2idDetails, feeP2idTag);
 
       // Leftover PSWAP expected note: serial = parent_serial with [3]+1
+      // Leftover serial: MASM `get_serial_number; push.1; add` increments
+      // stack TOP. Stack top = array index 0 (per the corrected convention
+      // from Rust MockChain Public-mode test, 2026-05-18).
       const leftoverSerialNum = new Word(
         new BigUint64Array([
-          swapSerialU64s[0],
+          swapSerialU64s[0] + 1n,
           swapSerialU64s[1],
           swapSerialU64s[2],
-          swapSerialU64s[3] + 1n,
+          swapSerialU64s[3],
         ]),
       );
+      // CORRECTED 2026-05-18 via Rust MockChain Public-mode test:
+      // MASM `mem_store.PARENT_SERIAL_3_ITEM` writes the original Word's
+      // stack-top (= array index 0) into slot 11 (PARENT_SERIAL_HI[1]),
+      // and stack-bottom (= array index 3) into slot 6
+      // (PARENT_SERIAL_LO[0]). Storage layout for the leftover therefore
+      // reverses the FE's swapSerialU64s array.
       const leftoverStorageItems = [
         new Felt(leftoverRequested),
         new Felt(0n),
@@ -361,12 +389,12 @@ export default function FeeSwapCreatePage() {
         new Felt(silverPrefix),
         new Felt(BigInt(swappTagU32)),
         new Felt(BigInt(p2idTagU32)),
-        new Felt(swapSerialU64s[0]), // PARENT_SERIAL_LO[0]
-        new Felt(swapSerialU64s[1]), // PARENT_SERIAL_LO[1]
+        new Felt(swapSerialU64s[3]), // slot 6 ← original array index 3 (stack bottom)
+        new Felt(swapSerialU64s[2]), // slot 7
         new Felt(nextSwapCount),     // SWAP_COUNT
         new Felt(0n),                // EXPIRATION_BLOCK
-        new Felt(swapSerialU64s[2]), // PARENT_SERIAL_HI[0]
-        new Felt(swapSerialU64s[3]), // PARENT_SERIAL_HI[1]
+        new Felt(swapSerialU64s[1]), // slot 10
+        new Felt(swapSerialU64s[0]), // slot 11 ← original array index 0 (stack top)
         new Felt(makerPrefix),
         new Felt(makerSuffix),
         new Felt(BigInt(noteTypeValue)),
@@ -398,15 +426,23 @@ export default function FeeSwapCreatePage() {
         new BigUint64Array([FILL_AMOUNT, 0n, 0n, 0n]),
       );
 
-      append(`Building consume request — only fee P2ID needs recipient registered (Public)…`);
+      // Public emission → kernel validates digest for maker P2ID + leftover
+      // too, so we must register all three. Private emission → kernel skips
+      // the check for maker + leftover; only the fee P2ID (always Public per
+      // MASM) needs registration.
+      const recipientList =
+        NOTE_TYPE_MODE === "Public"
+          ? [makerP2idRecipient, feeP2idRecipient, leftoverRecipient]
+          : [feeP2idRecipient];
+      append(
+        `Building consume request — ${recipientList.length} recipient(s) registered (mode=${NOTE_TYPE_MODE})…`,
+      );
       const makerNoteForConsume = await buildMakerPswapNote();
       const consumeReq = new TransactionRequestBuilder()
         .withInputNotes(
           new NoteAndArgsArray([new NoteAndArgs(makerNoteForConsume, noteArgs)]),
         )
-        .withExpectedOutputRecipients(
-          new NoteRecipientArray([feeP2idRecipient]),
-        )
+        .withExpectedOutputRecipients(new NoteRecipientArray(recipientList))
         .build();
 
       append(`Submitting consume tx (taker)…`);
@@ -528,7 +564,7 @@ export default function FeeSwapCreatePage() {
     } finally {
       setRunning(false);
     }
-  }, []);
+  }, [noteTypeMode]);
 
   return (
     <div
@@ -546,23 +582,76 @@ export default function FeeSwapCreatePage() {
         submit it. Treasury is a placeholder MutableWallet. Each click uses a
         fresh store.
       </p>
-      <button
-        type="button"
-        onClick={handleRun}
-        disabled={running}
+      <div
         style={{
-          background: "#111",
-          color: "#fff",
-          padding: "10px 18px",
-          borderRadius: 8,
-          border: 0,
-          cursor: running ? "not-allowed" : "pointer",
-          fontSize: 14,
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
           marginBottom: 16,
         }}
       >
-        {running ? "Running…" : "Run create"}
-      </button>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={running}
+          style={{
+            background: "#111",
+            color: "#fff",
+            padding: "10px 18px",
+            borderRadius: 8,
+            border: 0,
+            cursor: running ? "not-allowed" : "pointer",
+            fontSize: 14,
+          }}
+        >
+          {running ? "Running…" : `Run create (${noteTypeMode})`}
+        </button>
+        <div
+          role="radiogroup"
+          aria-label="Note type mode"
+          style={{
+            display: "inline-flex",
+            border: "1px solid #ddd",
+            borderRadius: 8,
+            overflow: "hidden",
+            fontSize: 13,
+          }}
+        >
+          {(["Public", "Private"] as const).map((mode) => {
+            const active = noteTypeMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setNoteTypeMode(mode)}
+                disabled={running}
+                style={{
+                  background: active ? "#111" : "#fff",
+                  color: active ? "#fff" : "#444",
+                  padding: "8px 14px",
+                  border: 0,
+                  borderLeft: mode === "Private" ? "1px solid #ddd" : "0",
+                  cursor: running ? "not-allowed" : "pointer",
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {mode}
+              </button>
+            );
+          })}
+        </div>
+        <span
+          style={{
+            fontSize: 12,
+            color: "#666",
+            fontFamily: "monospace",
+          }}
+        >
+          NOTE_TYPE_OUTPUT = {noteTypeMode === "Public" ? "1" : "2"}
+        </span>
+      </div>
       <pre
         style={{
           background: "#0d0d0d",

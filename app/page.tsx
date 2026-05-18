@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { AccountId } from "@miden-sdk/miden-sdk";
+// Type-only import — the runtime SDK is loaded via dynamic
+// `import("@miden-sdk/miden-sdk")` inside the handler below. A static
+// import here would pull `dist/st/eager.js` (and its IndexedDB init) into
+// the Next.js server bundle and crash at SSR with
+// `ReferenceError: indexedDB is not defined`.
+import type { AccountId } from "@miden-sdk/miden-sdk";
 import { PSWAP_MASM } from "@/lib/masm/pswap";
 
 const OFFERED_AMOUNT = BigInt(100_000);
@@ -147,7 +152,7 @@ export default function HomePage() {
         MidenArrays,
       } = sdk;
 
-      const toAccountId = (hex: string) => AccountId.fromHex(hex);
+      const toAccountId = (hex: string) => sdk.AccountId.fromHex(hex);
 
       const submitAndApply = async (
         accountId: any,
