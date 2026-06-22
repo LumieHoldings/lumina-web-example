@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a minimal reproduction of a partial swap (PSWAP) note consumption issue using the Miden WebClient SDK. It demonstrates a scenario where PSWAP works correctly via the Rust SDK but fails with a VM execution error when using the TypeScript/WASM WebClient SDK.
+A Next.js playground for testing partial swap (PSWAP) note behavior on the Miden testnet using the Miden WebClient SDK. Demonstrates creating faucets, wallets, minting tokens, creating swap notes, filling them partially or fully, and verifying balances.
 
 ## Development Commands
 
@@ -21,14 +21,19 @@ To run the test: Navigate to http://localhost:3000/partial and click "Run Test"
 ### Tech Stack
 - Next.js 16 (with webpack, required for WASM support)
 - React 19
-- @miden-sdk/miden-sdk 0.12.5 (Miden WebClient for browser-based blockchain interaction)
+- @miden-sdk/miden-sdk 0.13.1 (Miden WebClient for browser-based blockchain interaction)
 
 ### Key Files
-- `app/partial/page.tsx` - Main test page implementing the full PSWAP flow
+- `app/page.tsx` - Public PSWAP test page (main flow)
+- `app/private-pswap/page.tsx` - Private PSWAP test page
+- `app/full-swap/page.tsx` - Full swap test page
+- `app/official-swap/page.tsx` - SDK-native swap approach
 - `lib/masm/pswap.ts` - PSWAP note script in Miden Assembly (MASM)
+- `lib/masm/private-pswap.ts` - Private PSWAP note script
+- `lib/masm/swap-full.ts` - Full swap MASM script
 
 ### Test Flow
-The test at `/partial` executes:
+The test at `/` executes:
 1. Creates two faucets (GOLD and SILVER)
 2. Creates two wallets (Maker and Taker)
 3. Mints 1000 GOLD to Maker, 250 SILVER to Taker

@@ -20,6 +20,13 @@ yarn-error.log*
 .env*.local
 .env
 
+# editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
